@@ -28,6 +28,10 @@ func NewCookieFileAuth(token string, cookieFile string) (CookieFileAuth, error) 
 	return fc, nil
 }
 
+func (CookieFileAuth) Type() Type {
+	return TypeCookieFile
+}
+
 func deref[T any](cc []*T) []T {
 	var ret = make([]T, len(cc))
 	for i := range cc {

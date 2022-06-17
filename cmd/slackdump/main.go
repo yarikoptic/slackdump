@@ -21,6 +21,7 @@ import (
 
 	"github.com/rusq/slackdump/v2"
 	"github.com/rusq/slackdump/v2/internal/app"
+	"github.com/rusq/slackdump/v2/internal/app/tui"
 )
 
 const (
@@ -48,7 +49,7 @@ var secrets = []string{".env", ".env.txt", "secrets.txt"}
 // params is the command line parameters
 type params struct {
 	appCfg app.Config
-	creds  slackCreds
+	creds  app.SlackCreds
 
 	traceFile    string // trace file
 	printVersion bool
@@ -60,9 +61,17 @@ func main() {
 	loadSecrets(secrets)
 
 	params, err := parseCmdLine(os.Args[1:])
-	if err != nil {
+	if err != nil && !errors.Is(err, app.ErrNothingToDo) {
 		dlog.Fatal(err)
+	} else if errors.Is(err, app.ErrNothingToDo) {
+		// TUI mode
+		ui := tui.NewUI()
+		if err := ui.Run(params.appCfg, params.creds); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
+
 	if params.printVersion {
 		fmt.Println(build)
 		return
@@ -71,7 +80,7 @@ func main() {
 		dlog.SetDebug(true)
 	}
 
-	if err := run(context.Background(), params); err != nil {
+	if err := run(params); err != nil {
 		if params.verbose {
 			dlog.Fatalf("%+v", err)
 		} else {
@@ -81,7 +90,7 @@ func main() {
 }
 
 // run runs the dumper.
-func run(ctx context.Context, p params) error {
+func run(p params) error {
 	if p.traceFile != "" {
 		dlog.Printf("enabling trace, will write to %q", p.traceFile)
 		trc := tracer.New(p.traceFile)
@@ -95,14 +104,14 @@ func run(ctx context.Context, p params) error {
 		}()
 	}
 
-	ctx, task := trace.NewTask(ctx, "main.run")
+	ctx, task := trace.NewTask(context.Background(), "main.run")
 	defer task.End()
 
-	provider, err := p.creds.authProvider(ctx)
+	provider, err := p.creds.AuthProvider(ctx, "")
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		p.creds = slackCreds{}
+		p.creds = app.SlackCreds{}
 	}
 
 	application, err := app.New(p.appCfg, provider)
@@ -159,8 +168,8 @@ func parseCmdLine(args []string) (params, error) {
 	var p params
 
 	// authentication
-	fs.StringVar(&p.creds.token, "t", osenv.Secret(slackTokenEnv, ""), "Specify slack `API_token`, (environment: "+slackTokenEnv+")")
-	fs.StringVar(&p.creds.cookie, "cookie", osenv.Secret(slackCookieEnv, ""), "d= cookie `value` or a path to a cookie.txt file (environment: "+slackCookieEnv+")")
+	fs.StringVar(&p.creds.Token, "t", osenv.Secret(slackTokenEnv, ""), "Specify slack `API_token`, (environment: "+slackTokenEnv+")")
+	fs.StringVar(&p.creds.Cookie, "cookie", osenv.Secret(slackCookieEnv, ""), "d= cookie `value` or a path to a cookie.txt file (environment: "+slackCookieEnv+")")
 
 	// operation mode
 	fs.BoolVar(&p.appCfg.ListFlags.Channels, "c", false, "same as -list-channels")
