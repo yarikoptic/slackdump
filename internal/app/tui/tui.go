@@ -65,7 +65,7 @@ var (
 	}
 )
 
-var defTheme = theme5151
+var defTheme = themeLotus
 
 type screen func() (title string, content tview.Primitive)
 
@@ -92,8 +92,7 @@ func NewUI() *UI {
 
 func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 	screens := []screen{
-		ui.scrCookie,
-		ui.scrEzLogin,
+		ui.login,
 	}
 
 	ui.pages.SetBackgroundColor(ui.theme.Background)
@@ -186,20 +185,21 @@ func (ui *UI) lines(w io.Writer, lines []string) {
 
 func (ui *UI) linesEnum(w io.Writer, items []string) {
 	for i, line := range items {
-		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("%2d.   %s", i+1, line)))
+		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$hfg]%2d.[white]   %s", i+1, line)))
 	}
 }
 
 func (ui *UI) makeInstructions(lines []string) tview.Primitive {
-	instructions := tview.NewTextView().
+	p := tview.NewTextView().
 		SetDynamicColors(true).
 		SetWordWrap(true)
-	instructions.SetBackgroundColor(ui.theme.InfoBackground)
-	instructions.SetBorder(true)
+	p.SetTextColor(tcell.GetColor(ui.theme.HiTextFg))
+	p.SetBackgroundColor(ui.theme.InfoBackground)
+	p.SetBorder(true)
 
-	ui.linesEnum(instructions, lines)
+	ui.linesEnum(p, lines)
 
-	return instructions
+	return p
 }
 
 // makeLogo creates a logo
