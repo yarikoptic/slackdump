@@ -92,7 +92,7 @@ func NewUI() *UI {
 
 func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 	screens := []screen{
-		ui.login,
+		ui.makeLoginScreen(creds),
 	}
 
 	ui.pages.SetBackgroundColor(ui.theme.Background)
@@ -203,7 +203,7 @@ func (ui *UI) makeInstructions(lines []string) tview.Primitive {
 }
 
 // makeLogo creates a logo
-func (ui *UI) makeLogo() tview.Primitive {
+func (ui *UI) makeLogo() *tview.TextView {
 	p := tview.NewTextView().SetDynamicColors(true)
 	p.SetBackgroundColor(ui.theme.Background)
 	ui.lines(p, logo)
