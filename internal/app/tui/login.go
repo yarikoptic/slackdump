@@ -103,6 +103,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 	instr := ui.makeInstructions([]string{
 		`Follow the steps on [$ptc::u]["url"]this page[""][-::-]`,
 		"Enter the values in the fields [::i]instead[::-] of writing text file.",
+		"You can enter the [$gc::i]cookie[-::-] or a [$gc::i]filename[-::-] with cookie.",
 		"Press [$ptc]ENTER[-] to login",
 	})
 	instr.SetHighlightedFunc(func(added, removed, remaining []string) {
@@ -113,7 +114,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 
 	flex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(ui.modal(form, 76, 5), 5, 0, true).
-		AddItem(ui.modal(instr, 70, 5), 6, 0, false)
+		AddItem(ui.modal(instr, 70, 6), 6, 0, false)
 
 	return "Cookie", flex
 }

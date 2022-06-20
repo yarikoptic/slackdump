@@ -23,10 +23,10 @@ var (
 		MoreContrastBackgroundColor: tcell.ColorBlue,
 		BorderColor:                 tcell.ColorBlack,
 		TitleColor:                  tcell.ColorBlack,
-		GraphicsColor:               tcell.ColorRed,
+		GraphicsColor:               tcell.ColorWhite,
 		PrimaryTextColor:            tcell.ColorWhite,
-		SecondaryTextColor:          tcell.ColorYellow,
-		TertiaryTextColor:           tcell.ColorGreen,
+		SecondaryTextColor:          tcell.ColorBlack,
+		TertiaryTextColor:           tcell.ColorRed,
 		InverseTextColor:            tcell.ColorBlack,
 		ContrastSecondaryTextColor:  tcell.ColorDarkBlue,
 	}

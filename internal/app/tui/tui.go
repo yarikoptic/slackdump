@@ -141,7 +141,7 @@ func (ui *UI) lines(w io.Writer, lines []string) {
 
 func (ui *UI) linesEnum(w io.Writer, items []string) {
 	for i, line := range items {
-		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$stc]%2d.[-]   %s", i+1, line)))
+		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$ptc]%2d.[-]   %s", i+1, line)))
 	}
 }
 
