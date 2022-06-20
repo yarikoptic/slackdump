@@ -5,11 +5,12 @@ import (
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/pkg/browser"
 	"github.com/rivo/tview"
 	"github.com/rusq/slackdump/v2/internal/app"
 )
 
-func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primitive) {
+func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive) {
 	return func() (string, tview.Primitive) {
 		loginScreens := []func(creds app.SlackCreds) (string, tview.Primitive){
 			ui.scrEzLogin,
@@ -17,21 +18,21 @@ func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primit
 		}
 
 		pages := tview.NewPages()
-		pages.SetBackgroundColor(ui.theme.Background)
 
 		info := tview.NewTextView().
 			SetDynamicColors(true).
 			SetRegions(true).
 			SetWrap(false).
+			SetTextAlign(tview.AlignCenter).
 			SetHighlightedFunc(func(added, removed, remaining []string) {
 				pages.SwitchToPage(added[0])
 			})
-		info.SetBackgroundColor(ui.theme.Background)
+		info.SetBorder(true)
 
 		flex := tview.NewFlex().
 			SetDirection(tview.FlexRow).
 			AddItem(ui.makeLogo(), 7, 0, false).
-			AddItem(ui.modal(info, 60, 3), 3, 0, false).
+			AddItem(info, 3, 0, false).
 			AddItem(pages, 0, 1, true)
 
 		// switchFn := func(event *tcell.EventKey) *tcell.EventKey {
@@ -39,8 +40,6 @@ func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primit
 		// 	return event
 		// }
 
-		// TODO: there must be a better way - capture global screen events, instead
-		// of capturing them on every control.™¡
 		switchFn := func(event *tcell.EventKey) *tcell.EventKey {
 			if event.Key() == tcell.KeyRune {
 				if event.Modifiers()&tcell.ModAlt > 0 {
@@ -56,8 +55,7 @@ func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primit
 		// type capturer interface {
 		// 	SetInputCapture(capture func(event *tcell.EventKey) *tcell.EventKey) *tview.Box
 		// }
-		pages.SetInputCapture(switchFn)
-		info.SetInputCapture(switchFn)
+		ui.pages.SetInputCapture(switchFn)
 
 		for i, screen := range loginScreens {
 			title, primitive := screen(creds)
@@ -65,7 +63,7 @@ func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primit
 			// 	p.SetInputCapture(switchFn)
 			// }
 			pages.AddPage(strconv.Itoa(i), primitive, true, i == 0)
-			fmt.Fprintf(info, ui.colorize(`%d ["%d"][$tfg]%s[white][""]  `), i+1, i, title)
+			fmt.Fprintf(info, ui.colorize(`%d  ["%d"][$itc:$pbc] %s [-:-][""]  `), i+1, i, title)
 			if i == 0 {
 				info.Highlight(strconv.Itoa(i)).ScrollToHighlight()
 			}
@@ -78,7 +76,7 @@ func (ui *UI) makeLoginScreen(creds app.SlackCreds) func() (string, tview.Primit
 func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Primitive) {
 	items := []string{
 		"Enter the Slack workspace name OR\n      paste the URL of your Slack workspace.",
-		"Press ENTER, the browser will open.",
+		"Press [$ptc]ENTER[-], the browser will open.",
 		"Login as usual (browser will close automatically).",
 	}
 
@@ -86,7 +84,7 @@ func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Prim
 	instrFlex := ui.modal(ui.makeInstructions(items), 60, 6)
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(ui.modal(input, 60, 3), 3, 1, true).
+		AddItem(ui.modal(input, 60, 3), 5, 1, true).
 		AddItem(instrFlex, 6, 0, false)
 
 	return "EZ-Login", flex
@@ -102,27 +100,26 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 		AddFormItem(token).
 		AddFormItem(cookie)
 
-	form.SetBackgroundColor(ui.theme.Background)
-	form.SetLabelColor(ui.theme.Label)
-	form.SetFieldBackgroundColor(ui.theme.Field)
-
 	instr := ui.makeInstructions([]string{
-		"Follow the steps on\n       https://github.com/rusq/slackdump/blob/master/doc/login-manual.rst",
-		"Enter the values in the fields",
-		"Press ENTER to login",
+		`Follow the steps on [$ptc::u]["url"]this page[""][-::-]`,
+		"Enter the values in the fields [::i]instead[::-] of writing text file.",
+		"Press [$ptc]ENTER[-] to login",
+	})
+	instr.SetHighlightedFunc(func(added, removed, remaining []string) {
+		if len(added) > 0 && added[0] == "url" {
+			go browser.OpenURL("https://github.com/rusq/slackdump/blob/master/doc/login-manual.rst")
+		}
 	})
 
 	flex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(ui.modal(form, 76, 5), 5, 0, true).
-		AddItem(ui.modal(instr, 76, 6), 0, 50, false)
+		AddItem(ui.modal(instr, 70, 5), 6, 0, false)
 
 	return "Cookie", flex
 }
 
 func (ui *UI) newLoginInputField(text string) *tview.InputField {
 	input := tview.NewInputField().
-		SetLabel(text + " ").
-		SetLabelColor(ui.theme.Label).SetFieldBackgroundColor(ui.theme.Field)
-	input.SetBackgroundColor(ui.theme.Background)
+		SetLabel(text + " ")
 	return input
 }

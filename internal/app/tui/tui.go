@@ -14,58 +14,14 @@ import (
 
 var logo = []string{
 	"",
-	"   [$lfg:$lbg]         [:$tbg]",
-	"   [$lfg:$lbg]    ▲    [:$tbg]",
-	"   [$lfg:$lbg]   ▲ ▲   [:$tbg]",
-	"   [$lfg:$lbg]         [:$tbg]",
-	"   [$tfg]Slackdump",
+	"   [$ptc:$cbc]         [-:-]",
+	"   [$ptc:$cbc]    ▲    [-:-]",
+	"   [$ptc:$cbc]   ▲ ▲   [-:-]",
+	"   [$ptc:$cbc]         [-:-]",
+	"   [$itc]Slackdump",
 }
 
-type theme struct {
-	Background     tcell.Color
-	InfoBackground tcell.Color
-	Border         tcell.Color
-	Label          tcell.Color
-	Field          tcell.Color
-
-	LogoFg   string
-	LogoBg   string
-	TextFg   string
-	TextBg   string
-	HiTextFg string
-}
-
-// https://www.ditig.com/256-colors-cheat-sheet
-var (
-	themeLotus = theme{
-		Background:     tcell.ColorTeal,
-		InfoBackground: tcell.ColorBlue,
-		Border:         tcell.ColorBlack,
-		Label:          tcell.ColorBlack,
-		Field:          tcell.ColorBlack,
-
-		LogoFg:   "white",
-		LogoBg:   "black",
-		TextFg:   "black",
-		TextBg:   "teal",
-		HiTextFg: "white",
-	}
-	theme5151 = theme{
-		Background:     tcell.ColorGreen,
-		InfoBackground: tcell.ColorBlack,
-		Border:         tcell.ColorBlack,
-		Label:          tcell.ColorBlack,
-		Field:          tcell.ColorBlack,
-
-		LogoFg:   "#ffff00",
-		LogoBg:   "black",
-		TextFg:   "black",
-		TextBg:   "green",
-		HiTextFg: "#ffff00",
-	}
-)
-
-var defTheme = themeLotus
+var defTheme = themeLotus1
 
 type screen func() (title string, content tview.Primitive)
 
@@ -75,43 +31,55 @@ type UI struct {
 	msgQueue chan msg
 	debug    bool
 
-	theme theme
+	theme         tview.Theme
+	colorReplacer *strings.Replacer
 }
 
-func NewUI() *UI {
+type Option func(*UI)
+
+func WithTheme(theme tview.Theme) Option {
+	return func(ui *UI) {
+		ui.theme = theme
+	}
+}
+
+func NewUI(opt ...Option) *UI {
 	pages := tview.NewPages()
 
-	return &UI{
+	ui := &UI{
 		app:      tview.NewApplication(),
 		pages:    pages,
-		theme:    defTheme,
 		msgQueue: make(chan msg, 1),
+		theme:    defTheme,
 		debug:    false,
 	}
+	for _, fn := range opt {
+		fn(ui)
+	}
+	ui.colorReplacer = initReplacer(ui.theme)
+	tview.Styles = ui.theme
+
+	return ui
 }
 
 func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 	screens := []screen{
-		ui.makeLoginScreen(creds),
+		ui.makeScrLogin(creds),
+		ui.scrMode,
 	}
-
-	ui.pages.SetBackgroundColor(ui.theme.Background)
 
 	status := tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false).
 		SetTextAlign(tview.AlignCenter).
-		SetText(ui.colorize("[$hfg]F1[$tfg] displays a Help screen, [$hfg]F3[$tfg] exits."))
-	status.SetBackgroundColor(ui.theme.Background)
+		SetText(ui.colorize("[$ptc]F1[$itc] displays a Help screen, [$ptc]F3[$itc] exits."))
 
 	// Create the main layout.
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(ui.pages, 0, 14, true).
 		AddItem(status, 1, 1, false)
-	layout.SetBorder(true).
-		SetBackgroundColor(ui.theme.Background).
-		SetBorderColor(ui.theme.Border)
+	layout.SetBorder(true)
 
 	for index, screen := range screens {
 		title, primitive := screen()
@@ -162,19 +130,7 @@ func (ui *UI) modal(p tview.Primitive, width int, height int) tview.Primitive {
 		SetRows(0, height, 0).
 		AddItem(p, 1, 1, 1, 1, 0, 0, true)
 
-	grid.SetBackgroundColor(ui.theme.Background)
 	return ui.d(grid)
-}
-
-func (ui *UI) colorize(text string) string {
-	r := strings.NewReplacer(
-		"$lfg", ui.theme.LogoFg, // logo foreground
-		"$lbg", ui.theme.LogoBg, // logo background
-		"$tfg", ui.theme.TextFg, // text foreground
-		"$tbg", ui.theme.TextBg, // text background
-		"$hfg", ui.theme.HiTextFg, // hi text background
-	)
-	return r.Replace(text)
 }
 
 func (ui *UI) lines(w io.Writer, lines []string) {
@@ -185,17 +141,19 @@ func (ui *UI) lines(w io.Writer, lines []string) {
 
 func (ui *UI) linesEnum(w io.Writer, items []string) {
 	for i, line := range items {
-		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$hfg]%2d.[white]   %s", i+1, line)))
+		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$stc]%2d.[-]   %s", i+1, line)))
 	}
 }
 
-func (ui *UI) makeInstructions(lines []string) tview.Primitive {
+func (ui *UI) makeInstructions(lines []string) *tview.TextView {
 	p := tview.NewTextView().
 		SetDynamicColors(true).
-		SetWordWrap(true)
-	p.SetTextColor(tcell.GetColor(ui.theme.HiTextFg))
-	p.SetBackgroundColor(ui.theme.InfoBackground)
-	p.SetBorder(true)
+		SetWordWrap(true).
+		SetRegions(true)
+	p.SetTextColor(tview.Styles.PrimitiveBackgroundColor).
+		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
+		SetBorder(true).
+		SetBorderColor(ui.theme.PrimaryTextColor)
 
 	ui.linesEnum(p, lines)
 
@@ -205,7 +163,6 @@ func (ui *UI) makeInstructions(lines []string) tview.Primitive {
 // makeLogo creates a logo
 func (ui *UI) makeLogo() *tview.TextView {
 	p := tview.NewTextView().SetDynamicColors(true)
-	p.SetBackgroundColor(ui.theme.Background)
 	ui.lines(p, logo)
 	return p
 }
