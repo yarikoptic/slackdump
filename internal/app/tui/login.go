@@ -10,6 +10,11 @@ import (
 	"github.com/rusq/slackdump/v2/internal/app"
 )
 
+const (
+	screenLoginEz      = "ezlogin"
+	screenLoginCookies = "cookies"
+)
+
 func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive) {
 	return func() (string, tview.Primitive) {
 		loginScreens := []func(creds app.SlackCreds) (string, tview.Primitive){
@@ -31,7 +36,7 @@ func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive
 
 		flex := tview.NewFlex().
 			SetDirection(tview.FlexRow).
-			AddItem(ui.makeLogo(), 7, 0, false).
+			AddItem(makeHeader("LOGIN"), headerHeight, 0, false).
 			AddItem(info, 3, 0, false).
 			AddItem(pages, 0, 1, true)
 
@@ -63,7 +68,7 @@ func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive
 			// 	p.SetInputCapture(switchFn)
 			// }
 			pages.AddPage(strconv.Itoa(i), primitive, true, i == 0)
-			fmt.Fprintf(info, ui.colorize(`%d  ["%d"][$itc:$pbc] %s [-:-][""]  `), i+1, i, title)
+			fmt.Fprintf(info, colorize(`%d  ["%d"][$itc:$pbc] %s [-:-][""]  `), i+1, i, title)
 			if i == 0 {
 				info.Highlight(strconv.Itoa(i)).ScrollToHighlight()
 			}
@@ -81,13 +86,13 @@ func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Prim
 	}
 
 	input := ui.newLoginInputField("Slack Workspace ")
-	instrFlex := ui.modal(ui.makeInstructions(items), 60, 6)
+	instrFlex := ui.modal(makeInstructions(items), 60, 6)
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(ui.modal(input, 60, 3), 5, 1, true).
 		AddItem(instrFlex, 6, 0, false)
 
-	return "EZ-Login", flex
+	return screenLoginEz, flex
 }
 
 func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
@@ -100,7 +105,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 		AddFormItem(token).
 		AddFormItem(cookie)
 
-	instr := ui.makeInstructions([]string{
+	instr := makeInstructions([]string{
 		`Follow the steps on [$ptc::u]["url"]this page[""][-::-]`,
 		"Enter the values in the fields [::i]instead[::-] of writing text file.",
 		"You can enter the [$gc::i]cookie[-::-] or a [$gc::i]filename[-::-] with cookie.",
@@ -116,7 +121,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 		AddItem(ui.modal(form, 76, 5), 5, 0, true).
 		AddItem(ui.modal(instr, 70, 6), 6, 0, false)
 
-	return "Cookie", flex
+	return screenLoginCookies, flex
 }
 
 func (ui *UI) newLoginInputField(text string) *tview.InputField {

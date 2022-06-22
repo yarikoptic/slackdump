@@ -12,14 +12,18 @@ import (
 	"github.com/rusq/slackdump/v2/internal/app"
 )
 
-var logo = []string{
-	"",
-	"   [$ptc:$cbc]         [-:-]",
-	"   [$ptc:$cbc]    ▲    [-:-]",
-	"   [$ptc:$cbc]   ▲ ▲   [-:-]",
-	"   [$ptc:$cbc]         [-:-]",
-	"   [$itc]Slackdump",
-}
+var (
+	logo = []string{
+		"",
+		"   [$ptc:$cbc]         [-:-]",
+		"   [$ptc:$cbc]    ▲    [-:-]",
+		"   [$ptc:$cbc]   ▲ ▲   [-:-]",
+		"   [$ptc:$cbc]         [-:-]",
+		"   [$itc]Slackdump",
+	}
+	logoSz       = maxLineLen(logo)
+	headerHeight = len(logo) + 1
+)
 
 var defTheme = themeLotus1
 
@@ -64,15 +68,16 @@ func NewUI(opt ...Option) *UI {
 
 func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 	screens := []screen{
+		newLoginMode(ui).Screen,
 		ui.makeScrLogin(creds),
-		ui.scrMode,
+		newScrDumpMode(ui).Screen,
 	}
 
 	status := tview.NewTextView().
 		SetDynamicColors(true).
 		SetWrap(false).
 		SetTextAlign(tview.AlignCenter).
-		SetText(ui.colorize("[$ptc]F1[$itc] displays a Help screen, [$ptc]F3[$itc] exits."))
+		SetText(colorize("[$ptc]F1[$itc] displays a Help screen, [$ptc]F3[$itc] exits, [$ptc]F9[$itc] Options."))
 
 	// Create the main layout.
 	layout := tview.NewFlex().
@@ -94,6 +99,9 @@ func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 		case tcell.KeyF3:
 			// show warning
 			ui.sendMessage(wm_quit, nil)
+			return nil
+		case tcell.KeyF9:
+			// show parameters
 			return nil
 		}
 		return event
@@ -133,19 +141,19 @@ func (ui *UI) modal(p tview.Primitive, width int, height int) tview.Primitive {
 	return ui.d(grid)
 }
 
-func (ui *UI) lines(w io.Writer, lines []string) {
+func lines(w io.Writer, lines []string) {
 	for _, line := range lines {
-		fmt.Fprintln(w, ui.colorize(line))
+		fmt.Fprintln(w, colorize(line))
 	}
 }
 
-func (ui *UI) linesEnum(w io.Writer, items []string) {
+func linesEnum(w io.Writer, items []string) {
 	for i, line := range items {
-		fmt.Fprintln(w, ui.colorize(fmt.Sprintf("[$ptc]%2d.[-]   %s", i+1, line)))
+		fmt.Fprintln(w, colorize(fmt.Sprintf("[$ptc]%2d.[-]   %s", i+1, line)))
 	}
 }
 
-func (ui *UI) makeInstructions(lines []string) *tview.TextView {
+func makeInstructions(lines []string) *tview.TextView {
 	p := tview.NewTextView().
 		SetDynamicColors(true).
 		SetWordWrap(true).
@@ -153,16 +161,41 @@ func (ui *UI) makeInstructions(lines []string) *tview.TextView {
 	p.SetTextColor(tview.Styles.PrimitiveBackgroundColor).
 		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
 		SetBorder(true).
-		SetBorderColor(ui.theme.PrimaryTextColor)
+		SetBorderColor(tview.Styles.TertiaryTextColor)
 
-	ui.linesEnum(p, lines)
+	linesEnum(p, lines)
 
 	return p
 }
 
-// makeLogo creates a logo
-func (ui *UI) makeLogo() *tview.TextView {
-	p := tview.NewTextView().SetDynamicColors(true)
-	ui.lines(p, logo)
-	return p
+// makeHeader creates a logo
+func makeHeader(title string) tview.Primitive {
+	tLogo := tview.NewTextView().SetDynamicColors(true)
+	lines(tLogo, logo)
+	tTitle := tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter).
+		SetText(title)
+	grid := tview.NewGrid().
+		SetColumns(logoSz, 0, logoSz).
+		SetRows(0, 1, 0).
+		// column 0
+		AddItem(tLogo, 0, 0, 3, 1, 0, 0, false).
+		// column 1
+		AddItem(tview.NewBox(), 0, 1, 1, 1, 0, 0, false).
+		AddItem(tTitle, 1, 1, 1, 1, 1, 1, false).
+		AddItem(tview.NewBox(), 2, 1, 1, 1, 0, 0, false).
+		// column 2
+		AddItem(tview.NewBox(), 0, 2, 3, 1, 0, 0, false)
+	return grid
+}
+
+func maxLineLen(lines []string) int {
+	var maxLen = 0
+	for _, l := range lines {
+		if lineLen := len(colorize(l)); lineLen > maxLen {
+			maxLen = lineLen
+		}
+	}
+	return maxLen
 }

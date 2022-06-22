@@ -8,12 +8,17 @@ type message uint
 
 const (
 	wm_quit message = iota // quit the application
+	wm_page                // switch to page
 )
 
 // msg is the message iself.
 type msg struct {
 	message message
 	param   any
+}
+
+type messenger interface {
+	sendMessage(message, any)
 }
 
 func (ui *UI) sendMessage(m message, param any) {
@@ -26,6 +31,8 @@ func (ui *UI) messageLoop() {
 		case wm_quit:
 			ui.destroy()
 			return
+		case wm_page:
+			ui.pages.ShowPage(msg.param.(string))
 		}
 	}
 }

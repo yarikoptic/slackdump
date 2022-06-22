@@ -23,10 +23,10 @@ var (
 		MoreContrastBackgroundColor: tcell.ColorBlue,
 		BorderColor:                 tcell.ColorBlack,
 		TitleColor:                  tcell.ColorBlack,
-		GraphicsColor:               tcell.ColorWhite,
+		GraphicsColor:               tcell.ColorMaroon,
 		PrimaryTextColor:            tcell.ColorWhite,
 		SecondaryTextColor:          tcell.ColorBlack,
-		TertiaryTextColor:           tcell.ColorRed,
+		TertiaryTextColor:           tcell.ColorGrey,
 		InverseTextColor:            tcell.ColorBlack,
 		ContrastSecondaryTextColor:  tcell.ColorDarkBlue,
 	}
@@ -52,6 +52,7 @@ func initReplacer(th tview.Theme) *strings.Replacer {
 	)
 }
 
-func (ui *UI) colorize(text string) string {
-	return ui.colorReplacer.Replace(text)
+func colorize(text string) string {
+	colorReplacer := initReplacer(tview.Styles)
+	return colorReplacer.Replace(text)
 }
