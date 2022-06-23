@@ -32,10 +32,3 @@ func (l *scrLoginMode) Screen() (string, tview.Primitive) {
 		AddItem(menu, 0, 1, true)
 	return "login_menu", flex
 }
-
-func applyListTheme(l *tview.List) {
-	l.SetShortcutColor(tview.Styles.PrimitiveBackgroundColor).
-		SetSelectedBackgroundColor(tview.Styles.GraphicsColor).
-		SetSelectedTextColor(tview.Styles.PrimaryTextColor).
-		SetMainTextColor(tview.Styles.InverseTextColor)
-}

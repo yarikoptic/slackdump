@@ -161,7 +161,7 @@ func makeInstructions(lines []string) *tview.TextView {
 	p.SetTextColor(tview.Styles.PrimitiveBackgroundColor).
 		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
 		SetBorder(true).
-		SetBorderColor(tview.Styles.TertiaryTextColor)
+		SetBorderColor(tview.Styles.GraphicsColor)
 
 	linesEnum(p, lines)
 
@@ -170,6 +170,13 @@ func makeInstructions(lines []string) *tview.TextView {
 
 // makeHeader creates a logo
 func makeHeader(title string) tview.Primitive {
+	//    0              1                  2
+	//  +----+-----------------------+----+
+	//  | LO |_______________________|    | 0
+	//  | .. |________TEXT___________|    | 1
+	//  | GO |                       |    | 2
+	//  +----+-----------------------+----+
+	//
 	tLogo := tview.NewTextView().SetDynamicColors(true)
 	lines(tLogo, logo)
 	tTitle := tview.NewTextView().

@@ -56,3 +56,10 @@ func colorize(text string) string {
 	colorReplacer := initReplacer(tview.Styles)
 	return colorReplacer.Replace(text)
 }
+
+func applyListTheme(l *tview.List) {
+	l.SetShortcutColor(tview.Styles.PrimaryTextColor).
+		SetSelectedBackgroundColor(tview.Styles.GraphicsColor).
+		SetSelectedTextColor(tview.Styles.PrimaryTextColor).
+		SetMainTextColor(tview.Styles.InverseTextColor)
+}

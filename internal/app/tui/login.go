@@ -85,12 +85,13 @@ func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Prim
 		"Login as usual (browser will close automatically).",
 	}
 
+	const instrSz = 6
 	input := ui.newLoginInputField("Slack Workspace ")
-	instrFlex := ui.modal(makeInstructions(items), 60, 6)
+	instrFlex := ui.modal(makeInstructions(items), 60, instrSz)
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(ui.modal(input, 60, 3), 5, 1, true).
-		AddItem(instrFlex, 6, 0, false)
+		AddItem(instrFlex, instrSz, 0, false)
 
 	return screenLoginEz, flex
 }
@@ -108,7 +109,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 	instr := makeInstructions([]string{
 		`Follow the steps on [$ptc::u]["url"]this page[""][-::-]`,
 		"Enter the values in the fields [::i]instead[::-] of writing text file.",
-		"You can enter the [$gc::i]cookie[-::-] or a [$gc::i]filename[-::-] with cookie.",
+		"You can enter the [$ttc::i]cookie[-::-] or a [$ttc::i]filename[-::-] with cookie.",
 		"Press [$ptc]ENTER[-] to login",
 	})
 	instr.SetHighlightedFunc(func(added, removed, remaining []string) {
@@ -119,7 +120,7 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 
 	flex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(ui.modal(form, 76, 5), 5, 0, true).
-		AddItem(ui.modal(instr, 70, 6), 6, 0, false)
+		AddItem(ui.modal(shadow(instr, nil), 70, 6), 6, 0, false)
 
 	return screenLoginCookies, flex
 }
