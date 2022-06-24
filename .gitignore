@@ -37,3 +37,4 @@ cmd/sdconv/sdconv
 *~
 .env
 *.cache
+*.log

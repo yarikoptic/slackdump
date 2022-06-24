@@ -36,10 +36,5 @@ func (l *scrLoginMode) Screen() (pageName, tview.Primitive) {
 }
 
 func (l *scrLoginMode) WndProc(m msg) any {
-	// switch m.message {
-	// case wm_killfocus:
-	// 	l.global.sendMessage(pgHelp, wm_settext, "test")
-	// }
-
 	return false
 }

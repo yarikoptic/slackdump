@@ -13,9 +13,8 @@ type scrHelp struct {
 }
 
 func newScrHelp(m manager) *scrHelp {
-	help := tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true)
+	help := styleInstructions(tview.NewTextView())
+	help.SetScrollable(true)
 
 	help.SetTitle(helpTitle).
 		SetBorder(true).
@@ -33,10 +32,10 @@ func newScrHelp(m manager) *scrHelp {
 	}
 }
 
-const helpTitle = `Help screen`
+const helpTitle = ` Context Help `
 
 func (h *scrHelp) Screen() (pageName, tview.Primitive) {
-	return pgHelp, modal(h.wnd, 60, 20)
+	return pgHelp, modal(shadow(h.wnd, nil), 60, 20)
 }
 
 func (wnd *scrHelp) WndProc(msg msg) any {

@@ -1,7 +1,0 @@
-2022/06/24 13:04:13 message.go:51: result: false
-2022/06/24 13:04:13 message.go:51: result: true
-2022/06/24 13:04:14 message.go:51: result: true
-2022/06/24 13:04:14 message.go:51: result: <nil>
-2022/06/24 13:04:14 message.go:51: result: true
-2022/06/24 13:04:14 message.go:51: result: true
-2022/06/24 13:04:17 tui.go:205: terminating

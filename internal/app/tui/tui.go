@@ -112,7 +112,7 @@ func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 		case tcell.KeyF1:
 			curr, _ := ui.pages.GetFrontPage()
 			topic := topics[pageName(curr)]
-			ui.sendMessage(pgHelp, wm_settext, topic)
+			ui.sendMessage(pgHelp, wm_settext, colorize(topic))
 			ui.sendMessage(pgMain, wm_show, pgHelp)
 			return nil
 		case tcell.KeyF3:

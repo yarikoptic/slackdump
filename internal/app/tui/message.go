@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-
-	"github.com/rivo/tview"
 )
 
 // you may find that this implementation reminds you of win32 messaging system,
@@ -38,8 +36,6 @@ func (m msg) String() string {
 
 type manager interface {
 	sendMessage(pageName, message, any) any
-	lastPage() pageName
-	App() *tview.Application
 }
 
 func (ui *UI) sendMessage(wnd pageName, m message, param any) any {

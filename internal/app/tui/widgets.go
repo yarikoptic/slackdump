@@ -74,17 +74,21 @@ func shadow(p tview.Primitive, opts *shadowOpts) tview.Primitive {
 }
 
 func makeInstructions(lines []string) *tview.TextView {
-	p := tview.NewTextView().
-		SetDynamicColors(true).
-		SetWordWrap(true).
-		SetRegions(true)
-	p.SetTextColor(tview.Styles.PrimitiveBackgroundColor).
-		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
-		SetBorder(true).
-		SetBorderColor(tview.Styles.GraphicsColor)
-
+	p := styleInstructions(tview.NewTextView())
 	linesEnum(p, lines)
 
+	return p
+}
+
+func styleInstructions(p *tview.TextView) *tview.TextView {
+	p.SetDynamicColors(true).
+		SetWordWrap(true).
+		SetRegions(true).
+		SetTextColor(tview.Styles.PrimitiveBackgroundColor).
+		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
+		SetBorder(true).
+		SetBorderColor(tview.Styles.GraphicsColor).
+		SetTitleColor(tview.Styles.PrimaryTextColor)
 	return p
 }
 
