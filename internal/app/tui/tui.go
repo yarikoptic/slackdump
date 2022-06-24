@@ -3,41 +3,44 @@ package tui
 // Debug with: delve --headless debug module as per https://github.com/rivo/tview/issues/351
 
 import (
+	"container/list"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"github.com/rusq/dlog"
 	"github.com/rusq/slackdump/v2/internal/app"
 )
 
-var (
-	logo = []string{
-		"",
-		"   [$ptc:$cbc]         [-:-]",
-		"   [$ptc:$cbc]    ▲    [-:-]",
-		"   [$ptc:$cbc]   ▲ ▲   [-:-]",
-		"   [$ptc:$cbc]         [-:-]",
-		"   [$itc]Slackdump",
-	}
-	logoSz       = maxLineLen(logo)
-	headerHeight = len(logo) + 1
-)
+var defTheme = themeLotus1 // see colors.go
 
-var defTheme = themeLotus1
-
-type screen func() (title string, content tview.Primitive)
+const pgMain pageName = ""
 
 type UI struct {
-	app      *tview.Application
-	pages    *tview.Pages
-	msgQueue chan msg
-	debug    bool
+	app   *tview.Application
+	pages *tview.Pages
 
 	theme         tview.Theme
 	colorReplacer *strings.Replacer
+
+	pageHistory *list.List
+
+	log *dlog.Logger
+	lf  io.WriteCloser // log file
+
+	wnd map[pageName]window
 }
+
+type window interface {
+	Screen() (pageName, tview.Primitive)
+	WndProc(msg) any
+}
+
+type pageName string
 
 type Option func(*UI)
 
@@ -50,12 +53,23 @@ func WithTheme(theme tview.Theme) Option {
 func NewUI(opt ...Option) *UI {
 	pages := tview.NewPages()
 
+	lf, err := os.OpenFile("tui.log", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		//TODO
+		panic("unable to initialise logging")
+	}
+	log.SetOutput(lf)
+
 	ui := &UI{
-		app:      tview.NewApplication(),
-		pages:    pages,
-		msgQueue: make(chan msg, 1),
-		theme:    defTheme,
-		debug:    false,
+		app:   tview.NewApplication(),
+		pages: pages,
+		wnd:   make(map[pageName]window),
+		theme: defTheme,
+
+		pageHistory: list.New(),
+
+		log: dlog.New(lf, "", log.LstdFlags|log.Lshortfile, true),
+		lf:  lf,
 	}
 	for _, fn := range opt {
 		fn(ui)
@@ -67,10 +81,17 @@ func NewUI(opt ...Option) *UI {
 }
 
 func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
-	screens := []screen{
-		newLoginMode(ui).Screen,
-		ui.makeScrLogin(creds),
-		newScrDumpMode(ui).Screen,
+	screens := []window{
+		newLoginMode(ui),
+		newScrDumpMode(ui),
+		newScrHelp(ui),
+		// ui.makeScrLogin(creds),
+	}
+
+	for index, wnd := range screens {
+		name, primitive := wnd.Screen()
+		ui.pages.AddPage(string(name), primitive, true, index == 0)
+		ui.wnd[name] = wnd
 	}
 
 	status := tview.NewTextView().
@@ -86,19 +107,17 @@ func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 		AddItem(status, 1, 1, false)
 	layout.SetBorder(true)
 
-	for index, screen := range screens {
-		title, primitive := screen()
-		ui.pages.AddPage(title, primitive, true, index == 0)
-	}
-
 	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyF1:
-			// show help
+			curr, _ := ui.pages.GetFrontPage()
+			topic := topics[pageName(curr)]
+			ui.sendMessage(pgHelp, wm_settext, topic)
+			ui.sendMessage(pgMain, wm_show, pgHelp)
 			return nil
 		case tcell.KeyF3:
 			// show warning
-			ui.sendMessage(wm_quit, nil)
+			ui.sendMessage(pgMain, wm_quit, nil)
 			return nil
 		case tcell.KeyF9:
 			// show parameters
@@ -106,8 +125,7 @@ func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 		}
 		return event
 	})
-	// Start the message loop
-	go ui.messageLoop()
+
 	// Start the application.
 	if err := ui.app.SetRoot(layout, true).EnableMouse(true).Run(); err != nil {
 		return err
@@ -115,30 +133,80 @@ func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
 	return nil
 }
 
+// WndProc for the main window
+func (ui *UI) WndProc(msg msg) any {
+	// TODO type checking.
+	switch msg.message {
+	case wm_quit:
+		ui.destroy()
+		return true
+	case wm_switch, wm_show:
+		return ui.setFocus(msg)
+	case wm_close:
+		page, err := asPage(msg.param)
+		if err != nil {
+			ui.log.Printf("message: %s, error: %s", msg, err)
+			return false
+		}
+		ui.pages.HidePage(page)
+		ui.pageHistory.Remove(ui.pageHistory.Back())
+		return true
+	}
+	return false
+}
+
+func (ui *UI) setFocus(msg msg) any {
+	page, err := asPage(msg.param)
+	if err != nil {
+		ui.log.Printf("message: %s, error: %s", msg, err)
+		return false
+	}
+	curr, _ := ui.pages.GetFrontPage()
+	ui.sendMessage(pageName(curr), wm_killfocus, page)
+	ui.pageHistory.PushBack(pageName(curr))
+
+	switch msg.message {
+	case wm_show:
+		ui.pages.ShowPage(page)
+	case wm_switch:
+		ui.pages.SwitchToPage(page)
+	default:
+		panic("invalid call")
+	}
+	ui.pages.SendToFront(page)
+	return true
+}
+
+func (ui *UI) App() *tview.Application {
+	return ui.app
+}
+
+func (ui *UI) lastPage() pageName {
+	el := ui.pageHistory.Back()
+	if el == nil {
+		return ""
+	}
+	return el.Value.(pageName)
+}
+
+func asPage(v any) (string, error) {
+	switch val := v.(type) {
+	case pageName:
+		return string(val), nil
+	case string:
+		return val, nil
+	default:
+		return "", fmt.Errorf("invalid page type: %T", val)
+	}
+}
+
 func (ui *UI) destroy() {
 	ui.app.Stop()
-	close(ui.msgQueue)
-}
+	ui.log.Println("terminating")
 
-func (ui *UI) d(p tview.Primitive) tview.Primitive {
-	type borderer interface {
-		SetBorder(show bool) *tview.Box
-	}
-	if ui.debug {
-		if b, ok := p.(borderer); ok {
-			b.SetBorder(true)
-		}
-	}
-	return p
-}
-
-func (ui *UI) modal(p tview.Primitive, width int, height int) tview.Primitive {
-	grid := tview.NewGrid().
-		SetColumns(0, width, 0).
-		SetRows(0, height, 0).
-		AddItem(p, 1, 1, 1, 1, 0, 0, true)
-
-	return ui.d(grid)
+	// close log
+	ui.log.SetOutput(os.Stderr)
+	ui.lf.Close()
 }
 
 func lines(w io.Writer, lines []string) {
@@ -151,50 +219,6 @@ func linesEnum(w io.Writer, items []string) {
 	for i, line := range items {
 		fmt.Fprintln(w, colorize(fmt.Sprintf("[$ptc]%2d.[-]   %s", i+1, line)))
 	}
-}
-
-func makeInstructions(lines []string) *tview.TextView {
-	p := tview.NewTextView().
-		SetDynamicColors(true).
-		SetWordWrap(true).
-		SetRegions(true)
-	p.SetTextColor(tview.Styles.PrimitiveBackgroundColor).
-		SetBackgroundColor(tview.Styles.ContrastBackgroundColor).
-		SetBorder(true).
-		SetBorderColor(tview.Styles.GraphicsColor)
-
-	linesEnum(p, lines)
-
-	return p
-}
-
-// makeHeader creates a logo
-func makeHeader(title string) tview.Primitive {
-	//    0              1                  2
-	//  +----+-----------------------+----+
-	//  | LO |_______________________|    | 0
-	//  | .. |________TEXT___________|    | 1
-	//  | GO |                       |    | 2
-	//  +----+-----------------------+----+
-	//
-	tLogo := tview.NewTextView().SetDynamicColors(true)
-	lines(tLogo, logo)
-	tTitle := tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignCenter).
-		SetText(title)
-	grid := tview.NewGrid().
-		SetColumns(logoSz, 0, logoSz).
-		SetRows(0, 1, 0).
-		// column 0
-		AddItem(tLogo, 0, 0, 3, 1, 0, 0, false).
-		// column 1
-		AddItem(tview.NewBox(), 0, 1, 1, 1, 0, 0, false).
-		AddItem(tTitle, 1, 1, 1, 1, 1, 1, false).
-		AddItem(tview.NewBox(), 2, 1, 1, 1, 0, 0, false).
-		// column 2
-		AddItem(tview.NewBox(), 0, 2, 3, 1, 0, 0, false)
-	return grid
 }
 
 func maxLineLen(lines []string) int {

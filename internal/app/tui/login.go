@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	screenLoginEz      = "ezlogin"
-	screenLoginCookies = "cookies"
+	pgLogin        pageName = "login"
+	pgLoginEz      pageName = "ezlogin"
+	pgLoginCookies pageName = "cookies"
 )
 
-func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive) {
-	return func() (string, tview.Primitive) {
-		loginScreens := []func(creds app.SlackCreds) (string, tview.Primitive){
+func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (pageName, tview.Primitive) {
+	return func() (pageName, tview.Primitive) {
+		loginScreens := []func(creds app.SlackCreds) (pageName, tview.Primitive){
 			ui.scrEzLogin,
 			ui.scrCookie,
 		}
@@ -74,11 +75,11 @@ func (ui *UI) makeScrLogin(creds app.SlackCreds) func() (string, tview.Primitive
 			}
 		}
 
-		return "login", flex
+		return pgLogin, flex
 	}
 }
 
-func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Primitive) {
+func (ui *UI) scrEzLogin(creds app.SlackCreds) (title pageName, content tview.Primitive) {
 	items := []string{
 		"Enter the Slack workspace name OR\n      paste the URL of your Slack workspace.",
 		"Press [$ptc]ENTER[-], the browser will open.",
@@ -87,16 +88,16 @@ func (ui *UI) scrEzLogin(creds app.SlackCreds) (title string, content tview.Prim
 
 	const instrSz = 6
 	input := ui.newLoginInputField("Slack Workspace ")
-	instrFlex := ui.modal(makeInstructions(items), 60, instrSz)
+	instrFlex := modal(makeInstructions(items), 60, instrSz)
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(ui.modal(input, 60, 3), 5, 1, true).
+		AddItem(modal(input, 60, 3), 5, 1, true).
 		AddItem(instrFlex, instrSz, 0, false)
 
-	return screenLoginEz, flex
+	return pgLoginEz, flex
 }
 
-func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
+func (ui *UI) scrCookie(creds app.SlackCreds) (pageName, tview.Primitive) {
 	var (
 		token  = ui.newLoginInputField("Token (xoxc-)").SetText(creds.Token)
 		cookie = ui.newLoginInputField("Cookie (xoxd-)").SetText(creds.Cookie)
@@ -119,10 +120,10 @@ func (ui *UI) scrCookie(creds app.SlackCreds) (string, tview.Primitive) {
 	})
 
 	flex := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(ui.modal(form, 76, 5), 5, 0, true).
-		AddItem(ui.modal(shadow(instr, nil), 70, 6), 6, 0, false)
+		AddItem(modal(form, 76, 5), 5, 0, true).
+		AddItem(modal(shadow(instr, nil), 70, 6), 6, 0, false)
 
-	return screenLoginCookies, flex
+	return pgLoginCookies, flex
 }
 
 func (ui *UI) newLoginInputField(text string) *tview.InputField {

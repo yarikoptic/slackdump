@@ -3,32 +3,32 @@ package tui
 import "github.com/rivo/tview"
 
 type scrDumpMode struct {
-	global messenger
+	global manager
 }
 
-const screenDumpMode = "dump_mode"
+const pgDumpMode pageName = "dump_mode"
 
-func newScrDumpMode(m messenger) *scrDumpMode {
+func newScrDumpMode(m manager) *scrDumpMode {
 	return &scrDumpMode{m}
 }
 
-func (dm *scrDumpMode) Screen() (string, tview.Primitive) {
+func (wnd *scrDumpMode) Screen() (pageName, tview.Primitive) {
 	menu := tview.NewList()
 	menu.
 		AddItem(" Channels/Threads ", " Dump Channels and Threads", 'm', func() {
-			dm.global.sendMessage(wm_page, "")
+			wnd.global.sendMessage(pgMain, wm_switch, "")
 		}).
 		AddItem(" Export ", " Run Full Workspace Export", 'e', func() {
-			dm.global.sendMessage(wm_page, "")
+			wnd.global.sendMessage(pgMain, wm_switch, "")
 		}).
 		AddItem(" Channels ", " Save channel list to a file", 'c', func() {
-			dm.global.sendMessage(wm_page, "")
+			wnd.global.sendMessage(pgMain, wm_switch, "")
 		}).
 		AddItem(" Users ", " Save user list to a file.", 'u', func() {
-			dm.global.sendMessage(wm_page, "")
+			wnd.global.sendMessage(pgMain, wm_switch, "")
 		}).
 		AddItem(" Exit ", " Exit Slackdump and return to OS.", 'x', func() {
-			dm.global.sendMessage(wm_quit, nil)
+			wnd.global.sendMessage(pgMain, wm_quit, nil)
 		})
 	applyListTheme(menu)
 
@@ -36,5 +36,8 @@ func (dm *scrDumpMode) Screen() (string, tview.Primitive) {
 	flex.SetDirection(tview.FlexRow).
 		AddItem(makeHeader("Choose Login Mode"), headerHeight, 0, false).
 		AddItem(menu, 0, 1, true)
-	return screenDumpMode, flex
+
+	return pgDumpMode, flex
 }
+
+func (dm *scrDumpMode) WndProc(msg) any { return nil }

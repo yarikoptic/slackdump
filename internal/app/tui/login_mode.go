@@ -4,31 +4,42 @@ import (
 	"github.com/rivo/tview"
 )
 
+const pgLoginMenu = pageName("login_menu")
+
 type scrLoginMode struct {
-	global messenger
+	global manager
 }
 
-func newLoginMode(m messenger) *scrLoginMode {
+func newLoginMode(m manager) *scrLoginMode {
 	return &scrLoginMode{global: m}
 }
 
-func (l *scrLoginMode) Screen() (string, tview.Primitive) {
+func (l *scrLoginMode) Screen() (pageName, tview.Primitive) {
 	menu := tview.NewList()
 	menu.
 		AddItem(" Login With Browser ", " Automatic login (EZ-Login 3000)", '1', func() {
-			l.global.sendMessage(wm_page, "login")
+			l.global.sendMessage(pgMain, wm_switch, pgLogin)
 		}).
 		AddItem(" Login With Token and Cookie ", " Login with token and cookie or file", '2', func() {
-			l.global.sendMessage(wm_page, screenDumpMode)
+			l.global.sendMessage(pgMain, wm_switch, pgDumpMode)
 		}).
 		AddItem(" Exit ", " Exit Slackdump and return to OS.", 'x', func() {
-			l.global.sendMessage(wm_quit, nil)
+			l.global.sendMessage(pgMain, wm_quit, nil)
 		})
 	applyListTheme(menu)
 
 	flex := tview.NewFlex()
 	flex.SetDirection(tview.FlexRow).
-		AddItem(makeHeader("Choose Login Mode"), headerHeight, 0, false).
+		AddItem(makeHeader("CHOOSE LOGIN MODE"), headerHeight, 0, false).
 		AddItem(menu, 0, 1, true)
-	return "login_menu", flex
+	return pgLoginMenu, flex
+}
+
+func (l *scrLoginMode) WndProc(m msg) any {
+	// switch m.message {
+	// case wm_killfocus:
+	// 	l.global.sendMessage(pgHelp, wm_settext, "test")
+	// }
+
+	return false
 }
