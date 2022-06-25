@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/playwright-community/playwright-go"
-	"github.com/rusq/dlog"
+	"github.com/rusq/slackdump/v2/logger"
 )
 
 // Client is the client for Browser Auth Provider.
@@ -20,6 +20,8 @@ type Client struct {
 	workspace  string
 	pageClosed chan bool // will receive a notification that the page is closed prematurely.
 }
+
+var Logger logger.Interface = logger.Default
 
 // New create new browser based client
 func New(workspace string) (*Client, error) {
@@ -61,7 +63,8 @@ func (cl *Client) Authenticate(ctx context.Context) (string, []http.Cookie, erro
 	page.On("close", func() { trace.Log(ctx, "user", "page closed"); close(cl.pageClosed) })
 
 	uri := fmt.Sprintf("https://%s.slack.com", cl.workspace)
-	dlog.Debugf("opening browser URL=%s", uri)
+	l().Debugf("opening browser URL=%s", uri)
+
 	if _, err := page.Goto(uri); err != nil {
 		return "", nil, err
 	}
@@ -162,4 +165,11 @@ func float2time(v float64) time.Time {
 		return time.Now().Add(5 * 365 * 24 * time.Hour)
 	}
 	return time.Unix(int64(v), 0)
+}
+
+func l() logger.Interface {
+	if Logger == nil {
+		return logger.Default
+	}
+	return Logger
 }

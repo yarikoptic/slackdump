@@ -31,8 +31,8 @@ experiments/*
 dist/*
 secrets.*
 cmd/slackdump/slackdump
-/slackdump
 cmd/sdconv/sdconv
+/slackdump
 /*.txt
 *~
 .env

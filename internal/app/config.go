@@ -8,7 +8,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/rusq/dlog"
 	"github.com/slack-go/slack"
 
 	"github.com/rusq/slackdump/v2"
@@ -93,7 +92,7 @@ var ErrNothingToDo = errors.New("no valid input and no list flags specified")
 // Validate checks if the command line parameters have valid values.
 func (p *Config) Validate() error {
 	if p.ExportName != "" {
-		dlog.Debugf("will operate in export mode")
+		// slack workspace export mode.
 		return nil
 	}
 
