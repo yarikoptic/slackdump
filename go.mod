@@ -9,7 +9,6 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/joho/godotenv v1.4.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
-	github.com/pkg/errors v0.9.1
 	github.com/playwright-community/playwright-go v0.2000.1
 	github.com/rivo/tview v0.0.0-20220610163003-691f46d6f500
 	github.com/rusq/dlog v1.3.3
