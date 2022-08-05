@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -72,7 +71,7 @@ func main() {
 		// TUI mode
 		ui := tui.NewUI()
 		if err := ui.Run(params.appCfg, params.creds); err != nil {
-			log.Fatal(err)
+			dlog.Fatal(err)
 		}
 		return
 	}
@@ -90,7 +89,7 @@ func main() {
 	}
 
 	if err := run(context.Background(), params); err != nil {
-		log.Fatal(err)
+		dlog.Fatal(err)
 	}
 }
 
@@ -167,7 +166,7 @@ func initLog(filename string, verbose bool) (*dlog.Logger, func(), error) {
 
 	stopFn := func() {
 		if err := lf.Close(); err != nil {
-			log.Printf("failed to close the log file: %s", err)
+			dlog.Printf("failed to close the log file: %s", err)
 		}
 	}
 	return lg, stopFn, nil
