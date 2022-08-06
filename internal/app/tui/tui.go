@@ -58,7 +58,6 @@ func NewUI(opt ...Option) *UI {
 		//TODO
 		panic("unable to initialise logging")
 	}
-	log.SetOutput(lf)
 
 	ui := &UI{
 		app:   tview.NewApplication(),
