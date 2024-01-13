@@ -14,6 +14,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/rusq/dlog"
 	"github.com/rusq/slackdump/v2/internal/app"
+	"github.com/rusq/slackdump/v2/internal/app/config"
 )
 
 var defTheme = themeLotus1 // see colors.go
@@ -79,7 +80,7 @@ func NewUI(opt ...Option) *UI {
 	return ui
 }
 
-func (ui *UI) Run(cfg app.Config, creds app.SlackCreds) error {
+func (ui *UI) Run(cfg config.Params, creds app.SlackCreds) error {
 	screens := []window{
 		newLoginMode(ui),
 		newScrDumpMode(ui),
