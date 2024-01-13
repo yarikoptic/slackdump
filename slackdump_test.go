@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/rusq/dlog"
 	"github.com/rusq/slackdump/v2/auth"
 	"github.com/rusq/slackdump/v2/fsadapter"
@@ -21,6 +20,7 @@ import (
 	"github.com/rusq/slackdump/v2/types"
 	"github.com/slack-go/slack"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func Test_validateCache(t *testing.T) {
@@ -163,18 +163,19 @@ func Test_newLimiter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			tst := t
+			tst.Parallel()
 
 			got := network.NewLimiter(tt.args.t, tt.args.burst, tt.args.boost)
 
-			assert.NoError(t, got.Wait(context.Background())) // prime
+			assert.NoError(tst, got.Wait(context.Background())) // prime
 
 			start := time.Now()
 			err := got.Wait(context.Background())
 			stop := time.Now()
 
-			assert.NoError(t, err)
-			assert.WithinDurationf(t, start.Add(tt.wantDelay), stop, 10*time.Millisecond, "delayed for: %s, expected: %s", stop.Sub(start), tt.wantDelay)
+			assert.NoError(tst, err)
+			assert.WithinDurationf(tst, start.Add(tt.wantDelay), stop, 10*time.Millisecond, "delayed for: %s, expected: %s", stop.Sub(start), tt.wantDelay)
 		})
 	}
 }
@@ -229,7 +230,6 @@ func TestSession_Me(t *testing.T) {
 		Users     types.Users
 		UserIndex structures.UserIndex
 		options   Options
-		cacheDir  string
 	}
 	tests := []struct {
 		name    string
@@ -290,7 +290,6 @@ func TestSession_l(t *testing.T) {
 		Users     types.Users
 		UserIndex structures.UserIndex
 		options   Options
-		cacheDir  string
 	}
 	tests := []struct {
 		name   string

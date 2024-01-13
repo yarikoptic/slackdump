@@ -2,7 +2,6 @@ package slackdump
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,9 +10,9 @@ import (
 
 	"errors"
 
-	"github.com/golang/mock/gomock"
 	"github.com/slack-go/slack"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rusq/slackdump/v2/internal/encio"
 	"github.com/rusq/slackdump/v2/internal/fixtures"
@@ -63,8 +62,8 @@ func TestSession_saveUserCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopenedF.Close()
-	var uu types.Users
-	assert.NoError(t, json.NewDecoder(reopenedF).Decode(&uu))
+	uu, err := readUsers(reopenedF)
+	assert.NoError(t, err)
 	assert.Equal(t, testUsers, uu)
 }
 

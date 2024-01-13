@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"runtime/trace"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/slack-go/slack"
 	"golang.org/x/time/rate"
 
+	"github.com/rusq/chttp"
 	"github.com/rusq/slackdump/v2/auth"
 	"github.com/rusq/slackdump/v2/fsadapter"
 	"github.com/rusq/slackdump/v2/internal/network"
@@ -45,21 +45,25 @@ type Session struct {
 // clienter is the interface with some functions of slack.Client with the sole
 // purpose of mocking in tests (see client_mock.go)
 type clienter interface {
-	GetConversationInfoContext(ctx context.Context, channelID string, includeLocale bool) (*slack.Channel, error)
+	GetConversationInfoContext(ctx context.Context, input *slack.GetConversationInfoInput) (*slack.Channel, error)
 	GetConversationHistoryContext(ctx context.Context, params *slack.GetConversationHistoryParameters) (*slack.GetConversationHistoryResponse, error)
 	GetConversationRepliesContext(ctx context.Context, params *slack.GetConversationRepliesParameters) (msgs []slack.Message, hasMore bool, nextCursor string, err error)
 	GetConversationsContext(ctx context.Context, params *slack.GetConversationsParameters) (channels []slack.Channel, nextCursor string, err error)
 	GetFile(downloadURL string, writer io.Writer) error
 	GetTeamInfo() (*slack.TeamInfo, error)
 	GetUsersContext(ctx context.Context, options ...slack.GetUsersOption) ([]slack.User, error)
+	GetEmojiContext(ctx context.Context) (map[string]string, error)
+	GetUsersInConversationContext(ctx context.Context, params *slack.GetUsersInConversationParameters) ([]string, string, error)
 }
 
-// Errors
 var (
+	// ErrNoUserCache is returned when the user cache is not available.
 	ErrNoUserCache = errors.New("user cache unavailable")
 )
 
-// AllChanTypes enumerates all API-supported channel types as of 03/2022.
+// AllChanTypes enumerates all API-supported channel [types] as of 03/2023.
+//
+// [types]: https://api.slack.com/methods/conversations.list#arg_types
 var AllChanTypes = []string{"mpim", "im", "public_channel", "private_channel"}
 
 // New creates new session with the default options  and populates the internal
@@ -84,11 +88,16 @@ func NewWithOptions(ctx context.Context, authProvider auth.Provider, opts Option
 		return nil, err
 	}
 
-	cl := slack.New(authProvider.SlackToken(), slack.OptionCookieRAW(toPtrCookies(authProvider.Cookies())...))
+	httpCl, err := chttp.New("https://slack.com", authProvider.Cookies())
+	if err != nil {
+		return nil, err
+	}
+
+	cl := slack.New(authProvider.SlackToken(), slack.OptionHTTPClient(httpCl))
 
 	authTestResp, err := cl.AuthTestContext(ctx)
 	if err != nil {
-		return nil, &AuthError{Err: err}
+		return nil, &auth.Error{Err: err}
 	}
 
 	sd := &Session{
@@ -98,7 +107,7 @@ func NewWithOptions(ctx context.Context, authProvider auth.Provider, opts Option
 		fs:      fsadapter.NewDirectory("."), // default is to save attachments to the current directory.
 	}
 
-	sd.propagateLogger(sd.l())
+	network.SetLogger(sd.l())
 
 	if err := os.MkdirAll(opts.CacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create the cache directory: %s", err)
@@ -122,13 +131,17 @@ func TestAuth(ctx context.Context, provider auth.Provider) error {
 	ctx, task := trace.NewTask(ctx, "TestAuth")
 	defer task.End()
 
-	cl := slack.New(provider.SlackToken(), slack.OptionCookieRAW(toPtrCookies(provider.Cookies())...))
+	httpCl, err := chttp.New("https://slack.com", provider.Cookies())
+	if err != nil {
+		return err
+	}
+
+	cl := slack.New(provider.SlackToken(), slack.OptionHTTPClient(httpCl))
 
 	region := trace.StartRegion(ctx, "AuthTestContext")
 	defer region.End()
-	_, err := cl.AuthTestContext(ctx)
-	if err != nil {
-		return &AuthError{Err: err}
+	if _, err := cl.AuthTestContext(ctx); err != nil {
+		return &auth.Error{Err: err}
 	}
 	return nil
 }
@@ -160,23 +173,8 @@ func (sd *Session) SetFS(fs fsadapter.FS) {
 	sd.fs = fs
 }
 
-func toPtrCookies(cc []http.Cookie) []*http.Cookie {
-	var ret = make([]*http.Cookie, len(cc))
-	for i := range cc {
-		ret[i] = &cc[i]
-	}
-	return ret
-}
-
 func (sd *Session) limiter(t network.Tier) *rate.Limiter {
 	return network.NewLimiter(t, sd.options.Tier3Burst, int(sd.options.Tier3Boost))
-}
-
-// withRetry will run the callback function fn. If the function returns
-// slack.RateLimitedError, it will delay, and then call it again up to
-// maxAttempts times. It will return an error if it runs out of attempts.
-func withRetry(ctx context.Context, l *rate.Limiter, maxAttempts int, fn func() error) error {
-	return network.WithRetry(ctx, l, maxAttempts, fn)
 }
 
 func checkCacheFile(filename string, maxAge time.Duration) error {
@@ -210,9 +208,4 @@ func (sd *Session) l() logger.Interface {
 		return logger.Default
 	}
 	return sd.options.Logger
-}
-
-// propagateLogger propagates the slackdump logger to some dumb packages.
-func (sd *Session) propagateLogger(l logger.Interface) {
-	network.Logger = l
 }

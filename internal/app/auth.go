@@ -12,6 +12,7 @@ import (
 
 	"github.com/rusq/slackdump/v2"
 	"github.com/rusq/slackdump/v2/auth"
+	"github.com/rusq/slackdump/v2/auth/browser"
 	"github.com/rusq/slackdump/v2/internal/encio"
 )
 
@@ -21,6 +22,9 @@ import (
 const (
 	credsFile = "provider.bin"
 )
+
+// isWSL is true if we're running in the WSL environment
+var isWSL = os.Getenv("WSL_DISTRO_NAME") != ""
 
 // SlackCreds holds the Token and Cookie reference.
 type SlackCreds struct {
@@ -39,7 +43,11 @@ var (
 // this unfortunate fact could be relayed to the end-user.  If the type of the
 // authentication determined is not supported for the current system, it will
 // return ErrUnsupported.
-func (c SlackCreds) Type(ctx context.Context) (auth.Type, error) {
+func (c SlackCreds) Type(ctx context.Context, legacy bool) (auth.Type, error) {
+	var browserAuth = auth.TypeRod
+	if legacy {
+		browserAuth = auth.TypeBrowser
+	}
 	if !c.IsEmpty() {
 		if isExistingFile(c.Cookie) {
 			return auth.TypeCookieFile, nil
@@ -51,26 +59,28 @@ func (c SlackCreds) Type(ctx context.Context) (auth.Type, error) {
 		return auth.TypeInvalid, ErrUnsupported
 	}
 	if !ezLoginTested() {
-		return auth.TypeBrowser, ErrNotTested
+		return browserAuth, ErrNotTested
 	}
-	return auth.TypeBrowser, nil
+	return browserAuth, nil
 
 }
 
 func (c SlackCreds) IsEmpty() bool {
-	return c.Token == "" || c.Cookie == ""
+	return c.Token == "" || (auth.IsClientToken(c.Token) && c.Cookie == "")
 }
 
 // AuthProvider returns the appropriate auth Provider depending on the values
 // of the token and cookie.
-func (c SlackCreds) AuthProvider(ctx context.Context, workspace string) (auth.Provider, error) {
-	authType, err := c.Type(ctx)
+func (c SlackCreds) AuthProvider(ctx context.Context, workspace string, browser browser.Browser, legacy bool) (auth.Provider, error) {
+	authType, err := c.Type(ctx, legacy)
 	if err != nil {
 		return nil, err
 	}
 	switch authType {
+	case auth.TypeRod:
+		return auth.NewRODAuth(ctx, auth.BrowserWithWorkspace(workspace))
 	case auth.TypeBrowser:
-		return auth.NewBrowserAuth(ctx, auth.BrowserWithWorkspace(workspace))
+		return auth.NewBrowserAuth(ctx, auth.BrowserWithWorkspace(workspace), auth.BrowserWithBrowser(browser))
 	case auth.TypeCookieFile:
 		return auth.NewCookieFileAuth(c.Token, c.Cookie)
 	case auth.TypeValue:
@@ -85,12 +95,7 @@ func isExistingFile(name string) bool {
 }
 
 func ezLoginSupported() bool {
-	return runtime.GOARCH != "386" && !isWSL()
-}
-
-// isWSL detects if we're running in WSL environment
-func isWSL() bool {
-	return os.Getenv("WSL_DISTRO_NAME") != ""
+	return runtime.GOARCH != "386" && !isWSL
 }
 
 func ezLoginTested() bool {
@@ -107,7 +112,7 @@ var filer createOpener = encryptedFile{}
 
 type Credentials interface {
 	IsEmpty() bool
-	AuthProvider(ctx context.Context, workspace string) (auth.Provider, error)
+	AuthProvider(ctx context.Context, workspace string, browser browser.Browser, legacy bool) (auth.Provider, error)
 }
 
 // InitProvider initialises the auth.Provider depending on provided slack
@@ -125,7 +130,7 @@ type Credentials interface {
 // virtual), even another operating system on the same machine, unless it's a
 // clone of the source operating system on which the credentials storage was
 // created.
-func InitProvider(ctx context.Context, cacheDir string, workspace string, creds Credentials) (auth.Provider, error) {
+func InitProvider(ctx context.Context, cacheDir string, workspace string, creds Credentials, browser browser.Browser, legacy bool) (auth.Provider, error) {
 	ctx, task := trace.NewTask(ctx, "InitProvider")
 	defer task.End()
 
@@ -147,7 +152,7 @@ func InitProvider(ctx context.Context, cacheDir string, workspace string, creds 
 
 	// init the authentication provider
 	trace.Log(ctx, "info", "getting credentals from file or browser")
-	provider, err := creds.AuthProvider(ctx, workspace)
+	provider, err := creds.AuthProvider(ctx, workspace, browser, legacy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialise the auth provider: %w", err)
 	}

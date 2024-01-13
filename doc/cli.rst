@@ -81,10 +81,35 @@ Command line flags are described as of version ``v2.1.0``.
    timestamp of the latest message to fetch to
    (i.e. 2020-12-31T23:59:59).  Same as above, but for upper boundary.
 
+\-emoji
+   enables the emoji download mode.  Specify the target directory with
+   ``-base``.
+
+\-emoji-failfast
+   enables the immediate failure of emoji download on any error, i.e. network
+   failure or HTTP 404.  If not specified, all network errors are printed on
+   the screen and skipped.
+
 \-export name
    enables the mode of operation to "Slack Export" mode and sets the export
    directory to "name".  To save to a ZIP file, add .zip extension, i.e.
    ``name.zip``.
+
+\-export-type
+  allows to specify the export type.  It mainly affects how the location of
+  attachments files within the archive.  It can accept the following values::
+    
+    standard    - attachments are placed into channel_id/attachments directory.
+    mattermost  - attachments are placed into __uploads/ directory
+
+\-export-token
+  allows to append a custom export token to all attachment files (even if the
+  download is disabled).  It modifies each file's Download URLs and Thumbnail
+  URLs by adding the t= URL value to them.  NOTE: if you don't want it to be
+  saved in shell history, specify it as an environment variable
+  "SLACK_FILE_TOKEN", i.e.::
+
+    SLACK_FILE_TOKEN=xoxe-.... slackdump -export my_export.zip
 
 \-f
    shorthand for -download (means "files")

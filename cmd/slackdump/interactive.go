@@ -3,83 +3,99 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/rusq/slackdump/v2/internal/app"
-	"github.com/rusq/slackdump/v2/internal/app/ui"
-	"github.com/rusq/slackdump/v2/internal/structures"
+	"github.com/charmbracelet/huh"
+
+	"github.com/rusq/slackdump/v2/internal/app/config"
+	"github.com/rusq/slackdump/v2/internal/ui"
+	"github.com/rusq/slackdump/v2/internal/ui/ask"
 )
 
 var errExit = errors.New("exit")
 
-func Interactive(p *params) error {
-	mode := &survey.Select{
-		Message: "What would you like to do?",
-		Options: []string{"Dump", "Export", "List", "Exit"},
-		Description: func(value string, index int) string {
-			descr := []string{
-				"save a list of conversations",
-				"save the workspace or conversations in Slack Export format",
-				"list conversations or users on the screen",
-				"exit Slackdump and return to OS",
-			}
-			return descr[index]
+var mainMenu = []struct {
+	Name        string
+	Description string
+	Fn          func(p *params) error
+}{
+	{
+		Name:        "Dump",
+		Description: "save a list of conversations",
+		Fn:          surveyDump,
+	},
+	{
+		Name:        "Export",
+		Description: "save the workspace or conversations in Slack Export format",
+		Fn:          surveyExport,
+	},
+	{
+		Name:        "List",
+		Description: "list conversations or users on the screen",
+		Fn:          surveyList,
+	},
+	{
+		Name:        "Emojis",
+		Description: "export all emojis from a workspace",
+		Fn:          surveyEmojis,
+	},
+	{
+		Name:        "Exit",
+		Description: "exit Slackdump and return to the OS",
+		Fn: func(*params) error {
+			return errExit
 		},
+	},
+}
+
+func Interactive(p *params) error {
+	var items = make([]string, len(mainMenu))
+	for i := range mainMenu {
+		items[i] = mainMenu[i].Name
 	}
+
+	var options []huh.Option[string]
+	for _, mi := range mainMenu {
+		options = append(options, huh.NewOption(fmt.Sprintf("%-10s - %s", mi.Name, mi.Description), mi.Name))
+	}
+
 	var resp string
-	if err := survey.AskOne(mode, &resp); err != nil {
+	q := huh.NewSelect[string]().Options(options...).Title("What would you like to do?").Value(&resp)
+	if err := q.Run(); err != nil {
 		return err
 	}
-	var err error
-	switch resp {
-	case "Exit":
-		err = errExit
-	case "Dump":
-		err = surveyDump(p)
-	case "Export":
-		err = surveyExport(p)
-	case "List":
-		err = surveyList(p)
+
+	for _, mi := range mainMenu {
+		if resp == mi.Name {
+			return mi.Fn(p)
+		}
 	}
-	return err
+	// we should never get here.
+	return errors.New("internal error: invalid choice")
 }
 
 func surveyList(p *params) error {
-	qs := []*survey.Question{
-		{
-			Name:     "entity",
-			Validate: survey.Required,
-			Prompt: &survey.Select{
-				Message: "List: ",
-				Options: []string{"Conversations", "Users"},
-				Description: func(value string, index int) string {
-					return "List Slack " + value
-				},
-			},
-		},
-		{
-			Name:     "format",
-			Validate: survey.Required,
-			Prompt: &survey.Select{
-				Message: "Report format: ",
-				Options: []string{app.OutputTypeText, app.OutputTypeJSON},
-				Description: func(value string, index int) string {
-					return "produce output in " + value + " format"
-				},
-			},
-		},
-	}
-
 	mode := struct {
 		Entity string
 		Format string
 	}{}
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Choose what to list").
+			Value(&mode.Entity).
+			Options(
+				huh.NewOption("Conversations", "Conversations"),
+				huh.NewOption("Users", "Users"),
+			),
+		huh.NewSelect[string]().
+			Title("Choose the output format").
+			Value(&mode.Format).
+			Options(
+				huh.NewOption(config.OutputTypeJSON, config.OutputTypeJSON),
+				huh.NewOption(config.OutputTypeText, config.OutputTypeText),
+			),
+	))
 
-	var err error
-	if err = survey.Ask(qs, &mode); err != nil {
+	if err := form.Run(); err != nil {
 		return err
 	}
 
@@ -90,88 +106,78 @@ func surveyList(p *params) error {
 		p.appCfg.ListFlags.Users = true
 	}
 	p.appCfg.Output.Format = mode.Format
+	var err error
 	p.appCfg.Output.Filename, err = questOutputFile()
 	return err
 }
 
 func surveyExport(p *params) error {
 	var err error
-	p.appCfg.ExportName, err = ui.MustString(
+
+	p.appCfg.ExportName, err = ui.StringRequire(
 		"Output directory or ZIP file: ",
-		"Enter the output directory or ZIP file name.  Add \".zip\" to save to zip file",
+		"Enter the output directory or ZIP file name.  Add \".zip\" extension to save to a zip file.\nFor Mattermost, zip file is recommended.",
 	)
 	if err != nil {
 		return err
 	}
-	p.appCfg.Input.List, err = questConvoList()
+	p.appCfg.Input.List, err = ask.ConversationList("Conversations to export (leave empty or type ALL for full export): ")
 	if err != nil {
 		return err
 	}
+	p.appCfg.Options.DumpFiles, err = ui.Confirm("Export files?", true)
+	if err != nil {
+		return err
+	}
+	if p.appCfg.Options.DumpFiles {
+		p.appCfg.ExportType, err = ask.ExportType()
+		if err != nil {
+			return err
+		}
+		p.appCfg.ExportToken, err = ui.String("Append export token (leave empty if none)", "export token will be appended to all file URLs.")
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func surveyDump(p *params) error {
 	var err error
-	p.appCfg.Input.List, err = questConvoList()
+	p.appCfg.Input.List, err = ask.ConversationList("Enter conversations to dump: ")
 	return err
-}
-
-// questConvoList enquires the channel list.
-func questConvoList() (*structures.EntityList, error) {
-	for {
-		chanStr, err := ui.String(
-			"List conversations: ",
-			"Enter whitespace separated conversation IDs or URLs to export.\n"+
-				"   - prefix with ^ (caret) to exclude the converation\n"+
-				"   - prefix with @ to read the list of converations from the file.\n\n"+
-				"For more details, see https://github.com/rusq/slackdump/blob/master/doc/usage-export.rst#providing-the-list-in-a-file",
-		)
-		if err != nil {
-			return nil, err
-		}
-		if chanStr == "" {
-			return new(structures.EntityList), nil
-		}
-		if el, err := structures.MakeEntityList(strings.Split(chanStr, " ")); err != nil {
-			fmt.Println(err)
-		} else {
-			return el, nil
-		}
-	}
 }
 
 // questOutputFile prints the output file question.
 func questOutputFile() (string, error) {
-	var q = &survey.Input{
-		Message: "Output file name (if empty - screen output): ",
-		Suggest: func(partname string) []string {
-			// thanks to AlecAivazis for great example of this.
-			files, _ := filepath.Glob(partname + "*")
-			return files
-		},
-		Help: "Enter the filename to save the data to. Leave empty to print the results on the screen.",
-	}
-
-	var (
-		output string
+	return ui.FileSelector(
+		"Output file name (if empty - screen output): ",
+		"Enter the filename to save the data to. Leave empty to print the results on the screen.",
+		ui.WithDefaultFilename("-"),
 	)
+}
+
+func surveyEmojis(p *params) error {
+	p.appCfg.Emoji.Enabled = true
+	var base string
 	for {
-		if err := survey.AskOne(q, &output); err != nil {
-			return "", err
-		}
-		if _, err := os.Stat(output); err != nil {
-			break
-		}
-		overwrite, err := ui.Confirm(fmt.Sprintf("File %q exists. Overwrite?", output), false)
+		var err error
+		base, err = ui.FileSelector("Enter directory or ZIP file name: ", "Emojis will be saved to this directory or ZIP file")
 		if err != nil {
-			return "", err
+			return err
 		}
-		if overwrite {
+		if base != "-" && base != "" {
 			break
 		}
+		fmt.Println("invalid filename")
 	}
-	if output == "" {
-		output = "-"
+	p.appCfg.Output.Base = base
+
+	var err error
+	p.appCfg.Emoji.FailOnError, err = ui.Confirm("Fail on download errors?", false)
+	if err != nil {
+		return err
 	}
-	return output, nil
+	return nil
 }

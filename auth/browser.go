@@ -3,73 +3,67 @@ package auth
 import (
 	"context"
 	"io"
-	"net/url"
 	"os"
-	"strings"
-
-	"github.com/playwright-community/playwright-go"
+	"time"
 
 	"github.com/rusq/slackdump/v2/auth/auth_ui"
 	"github.com/rusq/slackdump/v2/auth/browser"
 )
 
 var _ Provider = BrowserAuth{}
-var defaultFlow = &auth_ui.Survey{}
+var defaultFlow = &auth_ui.Huh{}
 
 type BrowserAuth struct {
 	simpleProvider
-	flow      BrowserAuthUI
-	workspace string
+	opts options
+}
+
+type browserOpts struct {
+	browser      browser.Browser
+	flow         BrowserAuthUI
+	loginTimeout time.Duration
+	verbose      bool
 }
 
 type BrowserAuthUI interface {
+	// RequestWorkspace should request the workspace name from the user.
 	RequestWorkspace(w io.Writer) (string, error)
+	// Stop indicates that the auth flow should cleanup and exit, if it is
+	// keeping the state.
 	Stop()
 }
 
-type BrowserOption func(*BrowserAuth)
-
-func BrowserWithAuthFlow(flow BrowserAuthUI) BrowserOption {
-	return func(ba *BrowserAuth) {
-		if flow == nil {
-			return
-		}
-		ba.flow = flow
-	}
-}
-
-func BrowserWithWorkspace(name string) BrowserOption {
-	return func(ba *BrowserAuth) {
-		ba.workspace = name
-	}
-}
-
-func NewBrowserAuth(ctx context.Context, opts ...BrowserOption) (BrowserAuth, error) {
+func NewBrowserAuth(ctx context.Context, opts ...Option) (BrowserAuth, error) {
 	var br = BrowserAuth{
-		flow: defaultFlow,
+		opts: options{
+			browserOpts: browserOpts{
+				flow:         defaultFlow,
+				browser:      browser.Bfirefox,
+				loginTimeout: browser.DefLoginTimeout,
+			},
+		},
 	}
 	for _, opt := range opts {
-		opt(&br)
+		opt(&br.opts)
+	}
+	if IsDocker() {
+		return BrowserAuth{}, &Error{Err: ErrNotSupported, Msg: "browser auth is not supported in docker, use token/cookie auth instead"}
 	}
 
-	if err := playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}}); err != nil {
-		return br, err
-	}
-	if br.workspace == "" {
+	if br.opts.workspace == "" {
 		var err error
-		br.workspace, err = br.flow.RequestWorkspace(os.Stdout)
+		br.opts.workspace, err = br.opts.flow.RequestWorkspace(os.Stdout)
 		if err != nil {
 			return br, err
 		}
-		defer br.flow.Stop()
+		defer br.opts.flow.Stop()
 	}
-	if wsp, err := sanitize(br.workspace); err != nil {
+	if wsp, err := auth_ui.Sanitize(br.opts.workspace); err != nil {
 		return br, err
 	} else {
-		br.workspace = wsp
+		br.opts.workspace = wsp
 	}
-
-	auther, err := browser.New(br.workspace)
+	auther, err := browser.New(br.opts.workspace, browser.OptBrowser(br.opts.browser), browser.OptTimeout(br.opts.loginTimeout), browser.OptVerbose(br.opts.verbose))
 	if err != nil {
 		return br, err
 	}
@@ -81,26 +75,9 @@ func NewBrowserAuth(ctx context.Context, opts ...BrowserOption) (BrowserAuth, er
 		Token:  token,
 		Cookie: cookies,
 	}
-
 	return br, nil
 }
 
 func (BrowserAuth) Type() Type {
 	return TypeBrowser
-}
-
-func sanitize(workspace string) (string, error) {
-	if !strings.Contains(workspace, ".slack.com") {
-		return workspace, nil
-	}
-	if strings.HasPrefix(workspace, "https://") {
-		uri, err := url.Parse(workspace)
-		if err != nil {
-			return "", err
-		}
-		workspace = uri.Host
-	}
-	// parse
-	parts := strings.Split(workspace, ".")
-	return parts[0], nil
 }

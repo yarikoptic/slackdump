@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/trace"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/rusq/dlog"
@@ -19,26 +20,30 @@ import (
 	"github.com/slack-go/slack"
 
 	"github.com/rusq/slackdump/v2"
+	"github.com/rusq/slackdump/v2/auth/browser"
+	"github.com/rusq/slackdump/v2/export"
 	"github.com/rusq/slackdump/v2/internal/app"
+	"github.com/rusq/slackdump/v2/internal/app/config"
 	"github.com/rusq/slackdump/v2/internal/app/tui"
 	"github.com/rusq/slackdump/v2/internal/structures"
 	"github.com/rusq/slackdump/v2/logger"
 )
 
 const (
-	slackTokenEnv  = "SLACK_TOKEN"
-	slackCookieEnv = "COOKIE"
+	envSlackToken     = "SLACK_TOKEN"
+	envSlackCookie    = "COOKIE"
+	envSlackFileToken = "SLACK_FILE_TOKEN"
 
-	bannerFmt = "Slackdump %[1]s Copyright (c) 2018-%[2]s rusq (build: %s)\n\n"
+	bannerFmt = "Slackdump %s (commit: %s) built on: %s\n"
 )
 
 // defFilenameTemplate is the default file naming template.
 const defFilenameTemplate = "{{.ID}}{{ if .ThreadTS}}-{{.ThreadTS}}{{end}}"
 
 var (
-	build     = "dev"
-	buildYear = "2077"
-	commit    = "placeholder"
+	version = "dev"
+	date    = "2077"
+	commit  = "placeholder"
 )
 
 // secrets defines the names of the supported secret files that we load our
@@ -49,12 +54,17 @@ var secrets = []string{".env", ".env.txt", "secrets.txt"}
 
 // params is the command line parameters
 type params struct {
-	appCfg    app.Config
-	creds     app.SlackCreds
-	authReset bool
+	appCfg           config.Params
+	creds            app.SlackCreds
+	authReset        bool
+	browser          browser.Browser
+	browserTimeout   time.Duration
+	browserReinstall bool
+	legacyBrowser    bool // TODO: remove once the new browser is tested
 
 	traceFile string // trace file
 	logFile   string //log file, if not specified, outputs to stderr.
+	workspace string // workspace name
 
 	printVersion bool
 	verbose      bool
@@ -64,20 +74,10 @@ func main() {
 	banner(os.Stderr)
 	loadSecrets(secrets)
 
-	params, err := parseCmdLine(os.Args[1:])
-	if err != nil && !errors.Is(err, app.ErrNothingToDo) {
-		dlog.Fatal(err)
-	} else if errors.Is(err, app.ErrNothingToDo) {
-		// TUI mode
-		ui := tui.NewUI()
-		if err := ui.Run(params.appCfg, params.creds); err != nil {
-			dlog.Fatal(err)
-		}
-		return
-	}
+	params, cfgErr := parseCmdLine(os.Args[1:])
 
 	if params.printVersion {
-		fmt.Println(build)
+		fmt.Println(version)
 		return
 	}
 	if params.authReset {
@@ -86,6 +86,26 @@ func main() {
 				dlog.Printf("auth reset error: %s", err)
 			}
 		}
+		if errors.Is(cfgErr, config.ErrNothingToDo) {
+			// if no mode flag is specified - exit.
+			dlog.Println("You have been logged out.")
+			return
+		}
+	}
+	if errors.Is(cfgErr, config.ErrNothingToDo) {
+		// if the user hasn't provided any required flags, let's offer
+		// an interactive prompt to fill them.
+		// TUI mode
+		ui := tui.NewUI()
+		if err := ui.Run(params.appCfg, params.creds); err != nil {
+			dlog.Fatal(err)
+		}
+		if err := params.validate(); err != nil {
+			dlog.Fatal(err)
+		}
+		return
+	} else if cfgErr != nil {
+		dlog.Fatal(cfgErr)
 	}
 
 	if err := run(context.Background(), params); err != nil {
@@ -103,7 +123,7 @@ func run(ctx context.Context, p params) error {
 	defer logStopFn()
 	ctx = dlog.NewContext(ctx, lg)
 
-	// - setting the logger for slackdump package
+	// - setting the logger for the application.
 	p.appCfg.Options.Logger = lg
 
 	// - trace init
@@ -117,7 +137,14 @@ func run(ctx context.Context, p params) error {
 	ctx, task := trace.NewTask(ctx, "main.run")
 	defer task.End()
 
-	provider, err := app.InitProvider(ctx, p.appCfg.Options.CacheDir, "", p.creds)
+	if p.browserReinstall {
+		dlog.Printf("Reinstalling %s", p.browser)
+		if err := browser.Reinstall(p.browser, p.verbose); err != nil {
+			return fmt.Errorf("error reinstalling %s: %w", p.browser, err)
+		}
+	}
+
+	provider, err := app.InitProvider(ctx, p.appCfg.Options.CacheDir, p.workspace, p.creds, p.browser, p.legacyBrowser)
 	if err != nil {
 		return err
 	} else {
@@ -228,15 +255,21 @@ func parseCmdLine(args []string) (params, error) {
 	}
 
 	var p = params{
-		appCfg: app.Config{
-			Options: slackdump.DefOptions,
+		appCfg: config.Params{
+			Options:    slackdump.DefOptions,
+			ExportType: export.TNoDownload,
 		},
 	}
 
 	// authentication
-	fs.StringVar(&p.creds.Token, "t", osenv.Secret(slackTokenEnv, ""), "Specify slack `API_token`, (environment: "+slackTokenEnv+")")
-	fs.StringVar(&p.creds.Cookie, "cookie", osenv.Secret(slackCookieEnv, ""), "d= cookie `value` or a path to a cookie.txt file (environment: "+slackCookieEnv+")")
+	fs.StringVar(&p.creds.Token, "t", osenv.Secret(envSlackToken, ""), "Specify slack `API_token`, (environment: "+envSlackToken+")")
+	fs.StringVar(&p.creds.Cookie, "cookie", osenv.Secret(envSlackCookie, ""), "d= cookie `value` or a path to a cookie.txt file (environment: "+envSlackCookie+")")
 	fs.BoolVar(&p.authReset, "auth-reset", false, "reset EZ-Login 3000 authentication.")
+	fs.Var(&p.browser, "browser", "set the browser to use for authentication: 'chromium' or 'firefox' (default: firefox)")
+	fs.DurationVar(&p.browserTimeout, "browser-timeout", browser.DefLoginTimeout, "browser login timeout")
+	fs.StringVar(&p.workspace, "w", "", "set the Slack `workspace` name.  If not specifed, the slackdump will show an\ninteractive prompt.")
+	fs.BoolVar(&p.browserReinstall, "browser-reinstall", false, "reinstall the playwright browser")
+	fs.BoolVar(&p.legacyBrowser, "legacy-browser", false, "use the legacy browser authentication method")
 
 	// operation mode
 	fs.BoolVar(&p.appCfg.ListFlags.Channels, "c", false, "same as -list-channels")
@@ -245,6 +278,11 @@ func parseCmdLine(args []string) (params, error) {
 	fs.BoolVar(&p.appCfg.ListFlags.Users, "list-users", false, "list users and their IDs. ")
 	// - export
 	fs.StringVar(&p.appCfg.ExportName, "export", "", "`name` of the directory or zip file to export the Slack workspace to."+zipHint)
+	fs.Var(&p.appCfg.ExportType, "export-type", "set the export type: 'standard' or 'mattermost' (default: standard)")
+	fs.StringVar(&p.appCfg.ExportToken, "export-token", osenv.Secret(envSlackFileToken, ""), "Slack token that will be added to all file URLs, (environment: "+envSlackFileToken+")")
+	// - emoji
+	fs.BoolVar(&p.appCfg.Emoji.Enabled, "emoji", false, "dump all workspace emojis (set the base directory or zip file)")
+	fs.BoolVar(&p.appCfg.Emoji.FailOnError, "emoji-fastfail", false, "fail on download error (if false, the download errors will be ignored\nand files will be skipped")
 
 	// input-ouput options
 	fs.StringVar(&p.appCfg.Output.Filename, "o", "-", "Output `filename` for users and channels.\nUse '-' for the Standard Output.")
@@ -292,14 +330,14 @@ func parseCmdLine(args []string) (params, error) {
 	fs.BoolVar(&p.printVersion, "V", false, "print version and exit")
 	fs.BoolVar(&p.verbose, "v", osenv.Value("DEBUG", false), "verbose messages")
 
-	os.Unsetenv(slackTokenEnv)
-	os.Unsetenv(slackCookieEnv)
+	os.Unsetenv(envSlackToken)
+	os.Unsetenv(envSlackCookie)
 
 	if err := fs.Parse(args); err != nil {
 		return p, err
 	}
 
-	el, err := structures.MakeEntityList(fs.Args())
+	el, err := structures.NewEntityList(fs.Args())
 	if err != nil {
 		return p, err
 	}
@@ -319,7 +357,7 @@ func (p *params) validate() error {
 
 // banner prints the program banner.
 func banner(w io.Writer) {
-	fmt.Fprintf(w, bannerFmt, build, buildYear, trunc(commit, 7))
+	fmt.Fprintf(w, bannerFmt, version, commit, date)
 }
 
 // trunc truncates string s to n chars

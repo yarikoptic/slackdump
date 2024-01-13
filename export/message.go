@@ -13,46 +13,54 @@ import (
 // ExportMessage is the slack.Message with additional fields usually found in
 // slack exports.
 type ExportMessage struct {
-	slack.Msg
+	*slack.Msg
 
 	// additional fields not defined by the slack library, but present
 	// in slack exports
-	UserTeam        string             `json:"user_team,omitempty"`
-	SourceTeam      string             `json:"source_team,omitempty"`
-	UserProfile     *ExportUserProfile `json:"user_profile,omitempty"`
-	ReplyUsersCount int                `json:"reply_users_count,omitempty"`
-	ReplyUsers      []string           `json:"reply_users,omitempty"`
+	UserTeam        string             `json:"user_team"`
+	SourceTeam      string             `json:"source_team"`
+	UserProfile     *ExportUserProfile `json:"user_profile"`
+	ReplyUsersCount int                `json:"reply_users_count"`
+	ReplyUsers      []string           `json:"reply_users"`
+	slackdumpTime   time.Time          `json:"-"`
 }
 
 type ExportUserProfile struct {
-	AvatarHash        string `json:"avatar_hash,omitempty"`
-	Image72           string `json:"image_72,omitempty"`
-	FirstName         string `json:"first_name,omitempty"`
-	RealName          string `json:"real_name,omitempty"`
-	DisplayName       string `json:"display_name,omitempty"`
-	Team              string `json:"team,omitempty"`
-	Name              string `json:"name,omitempty"`
-	IsRestricted      bool   `json:"is_restricted,omitempty"`
-	IsUltraRestricted bool   `json:"is_ultra_restricted,omitempty"`
+	AvatarHash        string `json:"avatar_hash"`
+	Image72           string `json:"image_72"`
+	FirstName         string `json:"first_name"`
+	RealName          string `json:"real_name"`
+	DisplayName       string `json:"display_name"`
+	Team              string `json:"team"`
+	Name              string `json:"name"`
+	IsRestricted      bool   `json:"is_restricted"`
+	IsUltraRestricted bool   `json:"is_ultra_restricted"`
 }
 
 func (em ExportMessage) Time() time.Time {
-	ts, _ := structures.ParseSlackTS(em.Timestamp)
-	return ts
+	if em.slackdumpTime.IsZero() {
+		ts, _ := structures.ParseSlackTS(em.Timestamp)
+		return ts
+	}
+	return em.slackdumpTime
 }
 
 // newExportMessage creates an export message from a slack message and populates
 // some additional fields.  Slack messages produced by export are much more
 // saturated with information, i.e. contain user profiles and thread stats.
 func newExportMessage(msg *types.Message, users structures.UserIndex) *ExportMessage {
-	expMsg := ExportMessage{Msg: msg.Msg}
+	if msg == nil {
+		panic("internal error: msg is nil")
+	}
+	expMsg := ExportMessage{Msg: &msg.Msg}
 
 	expMsg.UserTeam = msg.Team
 	expMsg.SourceTeam = msg.Team
+	expMsg.slackdumpTime, _ = msg.Datetime()
 
 	if user, ok := users[msg.User]; ok && !user.IsBot {
 		expMsg.UserProfile = &ExportUserProfile{
-			AvatarHash:        user.Profile.AvatarHash, // is currently not populated.
+			AvatarHash:        "",
 			Image72:           user.Profile.Image72,
 			FirstName:         user.Profile.FirstName,
 			RealName:          user.Profile.RealName,
@@ -70,6 +78,7 @@ func newExportMessage(msg *types.Message, users structures.UserIndex) *ExportMes
 
 	// threaded message branch
 
+	expMsg.Replies = make([]slack.Reply, 0, len(msg.ThreadReplies))
 	for _, replyMsg := range msg.ThreadReplies {
 		expMsg.Msg.Replies = append(expMsg.Msg.Replies, slack.Reply{User: replyMsg.User, Timestamp: replyMsg.Timestamp})
 		expMsg.ReplyUsers = append(expMsg.ReplyUsers, replyMsg.User)

@@ -6,13 +6,14 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/rusq/slackdump/v2/internal/fixtures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -97,7 +98,7 @@ func TestZIP_WriteFile(t *testing.T) {
 
 	t.Run("write file creates the file in the zip archive", func(t *testing.T) {
 		zipfile, hZF := gimmeZIP(t, tmp)
-		if err := hZF.WriteFile("test1.txt", []byte("0123456789abcdef"), 0750); err != nil {
+		if err := hZF.WriteFile("test1.txt", []byte("0123456789abcdef"), 0o750); err != nil {
 			hZF.Close()
 			t.Fatalf("ZIP.WriteFile err=%s", err)
 		}
@@ -110,7 +111,7 @@ func TestZIP_WriteFile(t *testing.T) {
 // gimmeZIP creates a zip file, returns it's name and initialised *ZIP instance.
 // Don't forget to close it before running assertions.
 func gimmeZIP(t *testing.T, tmpdir string) (filename string, hZF *ZIP) {
-	zipfile := filepath.Join(tmpdir, fixtures.RandString(8)+".zip")
+	zipfile := filepath.Join(tmpdir, RandString(8)+".zip")
 	hZF, err := NewZipFile(zipfile)
 	if err != nil {
 		t.Fatal(err)
@@ -118,15 +119,16 @@ func gimmeZIP(t *testing.T, tmpdir string) (filename string, hZF *ZIP) {
 	return zipfile, hZF
 }
 
-func Test_syncWriter_Close(t *testing.T) {
-	t.Run("should unlock the mutex", func(t *testing.T) {
-		sw := syncWriter{mu: &sync.Mutex{}}
-
-		sw.mu.Lock()
-
-		sw.Close()
-		assert.True(t, sw.mu.TryLock())
-	})
+func RandString(sz int) string {
+	const (
+		charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+		chrstSz = len(charset)
+	)
+	ret := make([]byte, sz)
+	for i := 0; i < sz; i++ {
+		ret[i] = charset[mrand.Intn(chrstSz)]
+	}
+	return string(ret)
 }
 
 func TestNewZIP(t *testing.T) {
@@ -144,58 +146,144 @@ func TestNewZIP(t *testing.T) {
 }
 
 func TestCreateConcurrency(t *testing.T) {
-	// test for GH issue#90 - race condition in ZIP.Create
-	const (
-		numRoutines    = 16
-		testContentsSz = 1 * (1 << 20)
-	)
+	t.Parallel()
+	t.Run("issue#90", func(t *testing.T) {
+		t.Parallel()
+		// test for GH issue#90 - race condition in ZIP.Create
+		const (
+			numRoutines    = 16
+			testContentsSz = 1 * (1 << 20)
+		)
 
-	var buf bytes.Buffer
-	var wg sync.WaitGroup
+		var buf bytes.Buffer
+		var wg sync.WaitGroup
 
-	zw := zip.NewWriter(&buf)
-	defer zw.Close()
+		zw := zip.NewWriter(&buf)
+		defer zw.Close()
 
-	fsa := NewZIP(zw)
-	defer fsa.Close()
+		fsa := NewZIP(zw)
+		defer fsa.Close()
 
-	// prepare workers
-	readySteadyGo := make(chan struct{})
-	panicAttacks := make(chan any, numRoutines)
+		// prepare workers
+		readySteadyGo := make(chan struct{})
+		panicAttacks := make(chan any, numRoutines)
 
-	for i := 0; i < numRoutines; i++ {
-		wg.Add(1)
-		go func(n int) {
-			defer func() {
-				if r := recover(); r != nil {
-					panicAttacks <- fmt.Sprintf("ZIP.Create race condition in gr %d: %v", n, r)
+		for i := 0; i < numRoutines; i++ {
+			wg.Add(1)
+			go func(n int) {
+				defer func() {
+					if r := recover(); r != nil {
+						panicAttacks <- fmt.Sprintf("ZIP.Create race condition in gr %d: %v", n, r)
+					}
+				}()
+
+				defer wg.Done()
+				var contents bytes.Buffer
+				if _, err := io.CopyN(&contents, rand.Reader, testContentsSz); err != nil {
+					panic(err)
 				}
-			}()
 
-			defer wg.Done()
-			var contents bytes.Buffer
-			if _, err := io.CopyN(&contents, rand.Reader, testContentsSz); err != nil {
-				panic(err)
-			}
+				<-readySteadyGo
+				fw, err := fsa.Create(fmt.Sprintf("file%d", n))
+				if err != nil {
+					panic(err)
+				}
+				defer fw.Close()
 
-			<-readySteadyGo
-			fw, err := fsa.Create(fmt.Sprintf("file%d", i))
-			if err != nil {
-				panic(err)
-			}
-			defer fw.Close()
-
-			if _, err := io.Copy(fw, &contents); err != nil {
-				panic(err)
-			}
-		}(i)
-	}
-	close(readySteadyGo)
-	wg.Wait()
-	close(panicAttacks)
-	for r := range panicAttacks {
-		if r != nil {
-			t.Error(r)
+				if _, err := io.Copy(fw, &contents); err != nil {
+					panic(err)
+				}
+			}(i)
 		}
+		close(readySteadyGo)
+		wg.Wait()
+		close(panicAttacks)
+		for r := range panicAttacks {
+			if r != nil {
+				t.Error(r)
+			}
+		}
+	})
+}
+
+func TestZIP_normalizePath(t *testing.T) {
+	type args struct {
+		p string
 	}
+	tests := []struct {
+		name string
+		z    *ZIP
+		args args
+		want string
+	}{
+		{
+			"windows",
+			&ZIP{},
+			args{filepath.Join("sample", "directory", "and", "file.txt")},
+			"sample/directory/and/file.txt",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.z.normalizePath(tt.args.p); got != tt.want {
+				t.Errorf("ZIP.normalizePath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestZIP_dirpath(t *testing.T) {
+	type args struct {
+		dir string
+	}
+	tests := []struct {
+		name string
+		z    *ZIP
+		args args
+		want []string
+	}{
+		{
+			"single",
+			&ZIP{},
+			args{"foo/"},
+			[]string{"foo/"},
+		},
+		{
+			"single",
+			&ZIP{},
+			args{"foo"},
+			[]string{"foo/"},
+		},
+		{
+			"two",
+			&ZIP{},
+			args{"foo/bar"},
+			[]string{"foo/", "foo/bar/"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.z.dirpath(tt.args.dir); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ZIP.dirpath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_syncWriter_Close(t *testing.T) {
+	t.Run("should unlock the mutex", func(t *testing.T) {
+		sw := syncWriter{mu: &sync.Mutex{}}
+
+		sw.mu.Lock()
+
+		sw.Close()
+		assert.True(t, sw.mu.TryLock())
+		assert.True(t, sw.closed.Load())
+	})
+	t.Run("closing more than once does not panic", func(_ *testing.T) {
+		sw := syncWriter{mu: &sync.Mutex{}}
+		sw.mu.Lock()
+		sw.Close()
+		sw.Close()
+	})
 }

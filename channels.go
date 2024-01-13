@@ -63,7 +63,7 @@ func (sd *Session) getChannels(ctx context.Context, chanTypes []string, cb func(
 			nextcur string
 		)
 		reqStart := time.Now()
-		if err := withRetry(ctx, limiter, sd.options.Tier3Retries, func() error {
+		if err := network.WithRetry(ctx, limiter, sd.options.Tier3Retries, func() error {
 			var err error
 			trace.WithRegion(ctx, "GetConversationsContext", func() {
 				chans, nextcur, err = sd.client.GetConversationsContext(ctx, params)
@@ -97,4 +97,31 @@ func (sd *Session) getChannels(ctx context.Context, chanTypes []string, cb func(
 		}
 	}
 	return nil
+}
+
+// GetChannelMembers returns a list of all members in a channel.
+func (sd *Session) GetChannelMembers(ctx context.Context, channelID string) ([]string, error) {
+	var ids []string
+	var cursor string
+	for {
+		var uu []string
+		var next string
+		if err := network.WithRetry(ctx, sd.limiter(network.Tier4), sd.options.Tier4Retries, func() error {
+			var err error
+			uu, next, err = sd.client.GetUsersInConversationContext(ctx, &slack.GetUsersInConversationParameters{
+				ChannelID: channelID,
+				Cursor:    cursor,
+			})
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		ids = append(ids, uu...)
+
+		if next == "" {
+			break
+		}
+		cursor = next
+	}
+	return ids, nil
 }

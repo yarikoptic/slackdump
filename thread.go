@@ -72,7 +72,7 @@ func (*Session) populateThreads(
 ) (int, error) {
 	total := 0
 	for i := range msgs {
-		if msgs[i].ThreadTimestamp == "" {
+		if msgs[i].ThreadTimestamp == "" || msgs[i].SubType == "thread_broadcast" {
 			continue
 		}
 		threadMsgs, err := dumpFn(ctx, l, channelID, msgs[i].ThreadTimestamp, oldest, latest)
@@ -111,7 +111,7 @@ func (sd *Session) dumpThread(
 			nextCursor string
 		)
 		reqStart := time.Now()
-		if err := withRetry(ctx, l, sd.options.Tier3Retries, func() error {
+		if err := network.WithRetry(ctx, l, sd.options.Tier3Retries, func() error {
 			var err error
 			trace.WithRegion(ctx, "GetConversationRepliesContext", func() {
 				msgs, hasmore, nextCursor, err = sd.client.GetConversationRepliesContext(

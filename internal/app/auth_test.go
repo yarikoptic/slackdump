@@ -9,11 +9,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/rusq/slackdump/v2/auth"
+	"github.com/rusq/slackdump/v2/auth/browser"
 	"github.com/rusq/slackdump/v2/internal/mocks/mock_app"
 	"github.com/rusq/slackdump/v2/internal/mocks/mock_io"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func Test_isExistingFile(t *testing.T) {
@@ -55,16 +56,19 @@ func TestSlackCreds_Type(t *testing.T) {
 	type args struct {
 		ctx context.Context
 	}
-	tests := []struct {
+	type test struct {
 		name    string
 		fields  fields
 		args    args
 		want    auth.Type
 		wantErr bool
-	}{
-		{"browser", fields{Token: "", Cookie: ""}, args{context.Background()}, auth.TypeBrowser, false},
+	}
+	tests := []test{
 		{"value", fields{Token: "t", Cookie: "c"}, args{context.Background()}, auth.TypeValue, false},
-		{"browser", fields{Token: "t", Cookie: testFile}, args{context.Background()}, auth.TypeCookieFile, false},
+		{"cookie file", fields{Token: "t", Cookie: testFile}, args{context.Background()}, auth.TypeCookieFile, false},
+	}
+	if !isWSL {
+		tests = append(tests, test{"browser", fields{Token: "", Cookie: ""}, args{context.Background()}, auth.TypeBrowser, false})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -72,7 +76,7 @@ func TestSlackCreds_Type(t *testing.T) {
 				Token:  tt.fields.Token,
 				Cookie: tt.fields.Cookie,
 			}
-			got, err := c.Type(tt.args.ctx)
+			got, err := c.Type(tt.args.ctx, true)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("SlackCreds.Type() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -95,9 +99,10 @@ func TestSlackCreds_IsEmpty(t *testing.T) {
 		want   bool
 	}{
 		{"empty", fields{Token: "", Cookie: ""}, true},
-		{"empty", fields{Token: "x", Cookie: ""}, true},
-		{"empty", fields{Token: "", Cookie: "x"}, true},
-		{"empty", fields{Token: "x", Cookie: "x"}, false},
+		{"no token", fields{Token: "", Cookie: "x"}, true},
+		{"xoxc: token and cookie present", fields{Token: "xoxc-", Cookie: "x"}, false},
+		{"xoxc: no cookie is not ok", fields{Token: "xoxc-", Cookie: ""}, true},
+		{"other: no cookie is ok", fields{Token: "xoxp-", Cookie: ""}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +129,6 @@ func TestInitProvider(t *testing.T) {
 
 	storedProv, _ := auth.NewValueAuth("xoxc", "xoxd")
 	returnedProv, _ := auth.NewValueAuth("a", "b")
-	// using default filer
 
 	type args struct {
 		ctx       context.Context
@@ -145,7 +149,7 @@ func TestInitProvider(t *testing.T) {
 			func(m *mock_app.MockCredentials) {
 				m.EXPECT().IsEmpty().Return(false)
 				m.EXPECT().
-					AuthProvider(gomock.Any(), "wsp").
+					AuthProvider(gomock.Any(), "wsp", browser.Bfirefox, true).
 					Return(storedProv, nil)
 			},
 			nil, //not used in the test
@@ -167,7 +171,7 @@ func TestInitProvider(t *testing.T) {
 			args{context.Background(), testDir, "wsp"},
 			func(m *mock_app.MockCredentials) {
 				m.EXPECT().IsEmpty().Return(true)
-				m.EXPECT().AuthProvider(gomock.Any(), "wsp").Return(returnedProv, nil)
+				m.EXPECT().AuthProvider(gomock.Any(), "wsp", browser.Bfirefox, true).Return(returnedProv, nil)
 			},
 			errors.New("auth test fail"), // auth test fails
 			returnedProv,
@@ -178,7 +182,7 @@ func TestInitProvider(t *testing.T) {
 			args{context.Background(), testDir, "wsp"},
 			func(m *mock_app.MockCredentials) {
 				m.EXPECT().IsEmpty().Return(false)
-				m.EXPECT().AuthProvider(gomock.Any(), "wsp").Return(nil, errors.New("authProvider failed"))
+				m.EXPECT().AuthProvider(gomock.Any(), "wsp", browser.Bfirefox, true).Return(nil, errors.New("authProvider failed"))
 			},
 			nil,
 			nil,
@@ -189,7 +193,7 @@ func TestInitProvider(t *testing.T) {
 			args{context.Background(), testDir, "wsp"},
 			func(m *mock_app.MockCredentials) {
 				m.EXPECT().IsEmpty().Return(false)
-				m.EXPECT().AuthProvider(gomock.Any(), "wsp").Return(returnedProv, nil)
+				m.EXPECT().AuthProvider(gomock.Any(), "wsp", browser.Bfirefox, true).Return(returnedProv, nil)
 			},
 			nil,
 			returnedProv,
@@ -200,7 +204,7 @@ func TestInitProvider(t *testing.T) {
 			args{context.Background(), t.TempDir() + "$", "wsp"},
 			func(m *mock_app.MockCredentials) {
 				m.EXPECT().IsEmpty().Return(false)
-				m.EXPECT().AuthProvider(gomock.Any(), "wsp").Return(returnedProv, nil)
+				m.EXPECT().AuthProvider(gomock.Any(), "wsp", browser.Bfirefox, true).Return(returnedProv, nil)
 			},
 			nil,
 			returnedProv,
@@ -226,7 +230,7 @@ func TestInitProvider(t *testing.T) {
 			tt.expect(mc)
 
 			// test
-			got, err := InitProvider(tt.args.ctx, tt.args.cacheDir, tt.args.workspace, mc)
+			got, err := InitProvider(tt.args.ctx, tt.args.cacheDir, tt.args.workspace, mc, browser.Bfirefox, true)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("InitProvider() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -462,25 +466,4 @@ func TestAuthReset(t *testing.T) {
 			t.Errorf("expected the %s to be removed, but it is there", testFile)
 		}
 	})
-}
-
-func Test_isWSL(t *testing.T) {
-	tests := []struct {
-		name         string
-		wslDistroVal string
-		want         bool
-	}{
-		{"yes WSL", "Ubuntu", true},
-		{"not WSL", "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("WSL_DISTRO_NAME", tt.wslDistroVal)
-			defer os.Unsetenv("WSL_DISTRO_NAME")
-
-			if got := isWSL(); got != tt.want {
-				t.Errorf("isWSL() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }

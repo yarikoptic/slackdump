@@ -37,7 +37,7 @@ $(OUTPUT).exe: GOOS=windows
 $(OUTPUT).exe: $(OUTPUT)
 
 $(OUTPUT):
-	GOOS=$(GOOS) go build -ldflags=$(LDFLAGS) -o $(EXECUTABLE) $(CMD)
+	GOARCH=$(GOARCH) GOOS=$(GOOS) go build -ldflags=$(LDFLAGS) -o $(EXECUTABLE) $(CMD)
 
 x86_%:
 	GOARCH=amd64 go build -ldflags=$(LDFLAGS) -o $@ $(CMD)
@@ -62,3 +62,10 @@ slackdump.1: README.rst
 
 callvis:
 	go-callvis -group pkg,type -limit $(PKG) $(PKG)/cmd/slackdump
+
+goreleaser:
+	goreleaser check
+	goreleaser release --snapshot --clean
+
+tags:
+	gotags -R *.go > $@

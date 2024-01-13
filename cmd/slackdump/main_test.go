@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rusq/slackdump/v2"
+	"github.com/rusq/slackdump/v2/auth/browser"
 	"github.com/rusq/slackdump/v2/internal/app"
+	"github.com/rusq/slackdump/v2/internal/app/config"
 	"github.com/rusq/slackdump/v2/internal/structures"
 )
 
@@ -23,13 +25,13 @@ func Test_output_validFormat(t *testing.T) {
 		want   bool
 	}{
 		{"empty", fields{}, false},
-		{"empty", fields{format: app.OutputTypeJSON}, true},
-		{"empty", fields{format: app.OutputTypeText}, true},
+		{"empty", fields{format: config.OutputTypeJSON}, true},
+		{"empty", fields{format: config.OutputTypeText}, true},
 		{"empty", fields{format: "wtf"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := app.Output{
+			out := config.Output{
 				Filename: tt.fields.filename,
 				Format:   tt.fields.format,
 			}
@@ -62,15 +64,17 @@ func Test_checkParameters(t *testing.T) {
 					Token:  "x",
 					Cookie: "d",
 				},
-				appCfg: app.Config{
-					ListFlags: app.ListFlags{
+				browserTimeout: browser.DefLoginTimeout,
+				appCfg: config.Params{
+					ListFlags: config.ListFlags{
 						Users:    false,
 						Channels: true,
 					},
 					FilenameTemplate: defFilenameTemplate,
-					Input:            app.Input{List: &structures.EntityList{}},
-					Output:           app.Output{Filename: "-", Format: "text"},
-					Options:          slackdump.DefOptions,
+
+					Input:   config.Input{List: &structures.EntityList{}},
+					Output:  config.Output{Filename: "-", Format: "text"},
+					Options: slackdump.DefOptions,
 				}},
 			false,
 		},
@@ -82,14 +86,15 @@ func Test_checkParameters(t *testing.T) {
 					Token:  "x",
 					Cookie: "d",
 				},
-				appCfg: app.Config{
-					ListFlags: app.ListFlags{
+				browserTimeout: browser.DefLoginTimeout,
+				appCfg: config.Params{
+					ListFlags: config.ListFlags{
 						Channels: false,
 						Users:    true,
 					},
 					FilenameTemplate: defFilenameTemplate,
-					Input:            app.Input{List: &structures.EntityList{}},
-					Output:           app.Output{Filename: "-", Format: "text"},
+					Input:            config.Input{List: &structures.EntityList{}},
+					Output:           config.Output{Filename: "-", Format: "text"},
 					Options:          slackdump.DefOptions,
 				}},
 			false,
@@ -114,7 +119,7 @@ func Test_banner(t *testing.T) {
 	}{
 		{
 			"make sure I haven't fucked up",
-			fmt.Sprintf(bannerFmt, build, buildYear, trunc(commit, 7)),
+			fmt.Sprintf(bannerFmt, version, commit, date),
 		},
 	}
 	for _, tt := range tests {

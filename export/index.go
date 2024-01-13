@@ -7,9 +7,14 @@ import (
 	"strings"
 
 	"github.com/rusq/slackdump/v2/fsadapter"
+	"github.com/rusq/slackdump/v2/internal/structures"
+	"github.com/rusq/slackdump/v2/types"
+
 	"github.com/slack-go/slack"
 )
 
+// index is the index of the export archive.  filename tags are used to
+// serialize the structure to JSON files.
 type index struct {
 	Channels []slack.Channel `filename:"channels.json"`
 	Groups   []slack.Channel `filename:"groups.json,omitempty"`
@@ -20,7 +25,8 @@ type index struct {
 
 // DM respresents a direct Message entry in dms.json.
 // Structure is based on this post:
-//    https://github.com/RocketChat/Rocket.Chat/issues/13905#issuecomment-477500022
+//
+//	https://github.com/RocketChat/Rocket.Chat/issues/13905#issuecomment-477500022
 type DM struct {
 	ID      string   `json:"id"`
 	Created int64    `json:"created"`
@@ -35,8 +41,8 @@ var (
 
 // createIndex creates a channels and users index for export archive, splitting
 // channels in group/mpims/dms/public channels.  currentUserID should contain
-// the current user ID
-func createIndex(channels []slack.Channel, users []slack.User, currentUserID string) (*index, error) {
+// the current user ID.
+func createIndex(channels []slack.Channel, users types.Users, currentUserID string) (*index, error) {
 	if len(channels) == 0 {
 		return nil, errNoChannel
 	}
@@ -48,7 +54,11 @@ func createIndex(channels []slack.Channel, users []slack.User, currentUserID str
 	}
 
 	var idx = index{
-		Users: users,
+		Users:    users,
+		Channels: []slack.Channel{},
+		Groups:   []slack.Channel{},
+		MPIMs:    []slack.Channel{},
+		DMs:      []DM{},
 	}
 
 	for _, ch := range channels {
@@ -60,7 +70,11 @@ func createIndex(channels []slack.Channel, users []slack.User, currentUserID str
 				Members: []string{ch.User, currentUserID},
 			})
 		case ch.IsMpIM:
-			idx.MPIMs = append(idx.MPIMs, ch)
+			fixed, err := structures.FixMpIMmembers(&ch, users)
+			if err != nil {
+				return nil, err
+			}
+			idx.MPIMs = append(idx.MPIMs, *fixed)
 		case ch.IsGroup:
 			idx.Groups = append(idx.Groups, ch)
 		default:
