@@ -41,8 +41,8 @@ func TestExport_saveChannel(t *testing.T) {
 		name              string
 		fields            fields
 		args              args
-		wantErr           bool
 		wantMessageByDate messagesByDate
+		wantErr           bool
 	}{
 		{
 			"save ok",
@@ -60,7 +60,6 @@ func TestExport_saveChannel(t *testing.T) {
 					},
 				},
 			},
-			false,
 			messagesByDate{
 				"2020-12-30": []*ExportMessage{
 					{Msg: fixtures.LoadPtr[slack.Msg](fixtures.SimpleMessageJSON)},
@@ -71,6 +70,25 @@ func TestExport_saveChannel(t *testing.T) {
 					{Msg: fixtures.LoadPtr[slack.Msg](fixtures.BotMessageThreadChildJSON)},
 				},
 			},
+			false,
+		},
+		{
+			"reply_users is populated",
+			fields{dir: dir},
+			args{
+				"unittest1",
+				messagesByDate{
+					"2020-12-31": []*ExportMessage{
+						{Msg: fixtures.LoadPtr[slack.Msg](fixtures.BotMessageThreadParentJSON)},
+					},
+				},
+			},
+			messagesByDate{
+				"2020-12-31": []*ExportMessage{
+					{Msg: fixtures.LoadPtr[slack.Msg](fixtures.BotMessageThreadParentJSON)},
+				},
+			},
+			false,
 		},
 	}
 	for _, tt := range tests {
